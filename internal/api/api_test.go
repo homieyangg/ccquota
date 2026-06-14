@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -692,5 +693,132 @@ func TestNotificationsChannelFlow(t *testing.T) {
 	}
 	if !strings.HasPrefix(cfg["bot_token"], "enc:") {
 		t.Errorf("DB 中 bot_token 應以 enc: 開頭，實際：%q", cfg["bot_token"])
+	}
+}
+
+// postChannel 建立一個頻道並回傳新 id。
+func postChannel(t *testing.T, h http.Handler, payload map[string]any) (int64, int) {
+	t.Helper()
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/notifications/channels", bytes.NewReader(body))
+	req.SetBasicAuth("admin", AdminPassword)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		return 0, w.Code
+	}
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	id, _ := resp["id"].(float64)
+	return int64(id), w.Code
+}
+
+// TestNotificationsPutPreservesSecret 驗證 PUT 空 bot_token 會保留舊密文,其餘欄位照常更新。
+func TestNotificationsPutPreservesSecret(t *testing.T) {
+	s := testStore(t)
+	cipher := testCipher(t)
+	h := New(s, &oauth.Client{}, 1800, "", "", cipher)
+
+	id, code := postChannel(t, h, map[string]any{
+		"type":    "telegram",
+		"enabled": true,
+		"config":  map[string]string{"bot_token": "ORIGTOKEN9", "chat_id": "42"},
+	})
+	if code != http.StatusOK {
+		t.Fatalf("POST want 200, got %d", code)
+	}
+
+	// GET 確認遮罩(不洩漏明文)
+	resp := authedGet(t, h, "/api/notifications")
+	var out map[string]any
+	json.NewDecoder(resp.Body).Decode(&out)
+	outBytes, _ := json.Marshal(out)
+	if strings.Contains(string(outBytes), "ORIGTOKEN9") {
+		t.Error("GET 不應含明文 token")
+	}
+
+	// PUT 空 bot_token,只改 chat_id
+	putBody, _ := json.Marshal(map[string]any{
+		"type":    "telegram",
+		"enabled": true,
+		"config":  map[string]string{"bot_token": "", "chat_id": "99"},
+	})
+	preq := httptest.NewRequest(http.MethodPut,
+		"/api/notifications/channels/"+strconv.FormatInt(id, 10), bytes.NewReader(putBody))
+	preq.SetBasicAuth("admin", AdminPassword)
+	preq.Header.Set("Content-Type", "application/json")
+	pw := httptest.NewRecorder()
+	h.ServeHTTP(pw, preq)
+	if pw.Code != http.StatusOK {
+		t.Fatalf("PUT want 200, got %d: %s", pw.Code, pw.Body.String())
+	}
+
+	// DB 中 bot_token 應仍解密回原值,chat_id 更新為 99
+	channels, err := s.ListChannels()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]string
+	json.Unmarshal([]byte(channels[0].Config), &cfg)
+	tok, err := cipher.Decrypt(cfg["bot_token"])
+	if err != nil {
+		t.Fatalf("decrypt: %v", err)
+	}
+	if tok != "ORIGTOKEN9" {
+		t.Errorf("bot_token 應保留原值 ORIGTOKEN9,實際 %q", tok)
+	}
+	if cfg["chat_id"] != "99" {
+		t.Errorf("chat_id 應更新為 99,實際 %q", cfg["chat_id"])
+	}
+}
+
+// TestNotificationsUnknownType 驗證未知頻道型別回 400。
+func TestNotificationsUnknownType(t *testing.T) {
+	s := testStore(t)
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	_, code := postChannel(t, h, map[string]any{
+		"type":    "carrierpigeon",
+		"enabled": true,
+		"config":  map[string]string{},
+	})
+	if code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", code)
+	}
+}
+
+// TestNotificationsThresholdsRoundTrip 驗證 PUT 門檻後 GET 取回新值。
+func TestNotificationsThresholdsRoundTrip(t *testing.T) {
+	s := testStore(t)
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+
+	body, _ := json.Marshal(map[string]any{
+		"SevenDayWarn": 80, "SevenDayCrit": 92, "FiveHourCrit": 97, "ResetNotify": false,
+	})
+	req := httptest.NewRequest(http.MethodPut, "/api/notifications/thresholds", bytes.NewReader(body))
+	req.SetBasicAuth("admin", AdminPassword)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT thresholds want 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	resp := authedGet(t, h, "/api/notifications")
+	var out struct {
+		Thresholds store.AlertThresholds `json:"thresholds"`
+	}
+	json.NewDecoder(resp.Body).Decode(&out)
+	if out.Thresholds.SevenDayWarn != 80 {
+		t.Errorf("SevenDayWarn want 80, got %v", out.Thresholds.SevenDayWarn)
+	}
+	if out.Thresholds.SevenDayCrit != 92 {
+		t.Errorf("SevenDayCrit want 92, got %v", out.Thresholds.SevenDayCrit)
+	}
+	if out.Thresholds.FiveHourCrit != 97 {
+		t.Errorf("FiveHourCrit want 97, got %v", out.Thresholds.FiveHourCrit)
+	}
+	if out.Thresholds.ResetNotify {
+		t.Error("ResetNotify want false")
 	}
 }

@@ -311,17 +311,26 @@ func buildNotifierFromStore(s *store.Store, c *secret.Cipher) *alert.Notifier {
 	return alert.NewNotifier(cfg, s, sinks...)
 }
 
-func buildPoller(s *store.Store, n *alert.Notifier) *poller.Poller {
+func buildPoller(s *store.Store) *poller.Poller {
 	return &poller.Poller{
 		Store: s,
 		Usage: &usage.Client{},
 		OAuth: &oauth.Client{},
-		OnReset: func(acct string, from, to float64) {
-			log.Printf("RESET account=%s 7d %.0f%% -> %.0f%%", acct, from, to)
-			if err := n.Reset(context.Background(), acct, from, to); err != nil {
-				log.Printf("alert reset error: %v", err)
-			}
-		},
+	}
+}
+
+// resetCallback 回傳 poller 重置事件處理函式:尊重 ResetNotify 開關,
+// 每次都從 DB 重讀最新頻道設定再送通知。
+func resetCallback(s *store.Store, c *secret.Cipher) func(string, float64, float64) {
+	return func(acct string, from, to float64) {
+		th, _ := s.GetAlertThresholds()
+		if !th.ResetNotify {
+			return
+		}
+		log.Printf("RESET account=%s 7d %.0f%% -> %.0f%%", acct, from, to)
+		if err := buildNotifierFromStore(s, c).Reset(context.Background(), acct, from, to); err != nil {
+			log.Printf("alert reset error: %v", err)
+		}
 	}
 }
 
@@ -335,15 +344,8 @@ func runServe(s *store.Store) {
 	}
 
 	cipher := loadCipher()
-	n := buildNotifier(s)
-	p := buildPoller(s, n)
-	// 覆寫 OnReset,每次重置都從 DB 重讀最新頻道設定。
-	p.OnReset = func(acct string, from, to float64) {
-		log.Printf("RESET account=%s 7d %.0f%% -> %.0f%%", acct, from, to)
-		if err := buildNotifierFromStore(s, cipher).Reset(context.Background(), acct, from, to); err != nil {
-			log.Printf("alert reset error: %v", err)
-		}
-	}
+	p := buildPoller(s)
+	p.OnReset = resetCallback(s, cipher)
 	ctx := context.Background()
 	go func() {
 		for {
@@ -421,6 +423,7 @@ func runServe(s *store.Store) {
 
 // runPoll 執行一次 poll 後退出。
 func runPoll(s *store.Store) {
-	n := buildNotifier(s)
-	buildPoller(s, n).PollAll(context.Background())
+	p := buildPoller(s)
+	p.OnReset = resetCallback(s, loadCipher())
+	p.PollAll(context.Background())
 }
