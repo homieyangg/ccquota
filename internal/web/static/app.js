@@ -127,7 +127,7 @@ function _fmtBucketTime(ts) {
 function drawSeriesChart(canvas, points, valueFn, color, fmt) {
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.offsetWidth || 300;
-  const h = 56;
+  const h = 64;
   canvas.width = w * dpr; canvas.height = h * dpr;
   const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
   const pts = points || [];

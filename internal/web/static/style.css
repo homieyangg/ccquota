@@ -69,20 +69,26 @@ header {
   z-index: 50;
 }
 
+.brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.brand-mark {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  display: block;
+  border-radius: 7px;
+}
+
 header h1 {
   font-size: 16px;
   font-weight: 600;
-  letter-spacing: -0.01em;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-header h1::before {
-  content: "";
-  width: 9px; height: 9px;
-  border-radius: 50%;
-  background: var(--green-fill);
-  box-shadow: 0 0 0 3px rgba(45, 164, 78, 0.16);
+  letter-spacing: 0;
+  min-width: 0;
 }
 
 .header-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
@@ -409,8 +415,13 @@ button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.1
   border-radius: var(--radius); padding: 36px 32px; width: 100%; max-width: 360px;
   box-shadow: 0 8px 30px rgba(24, 24, 27, 0.06);
 }
+.login-logo {
+  display: block;
+  width: min(210px, 100%);
+  height: auto;
+  margin: 0 auto 20px;
+}
 .login-card h1 { font-size: 19px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 6px; text-align: center; }
-.login-card h1::before { content: "ccquota"; display: block; font-family: var(--mono); font-size: 12px; font-weight: 500; color: var(--ink-3); letter-spacing: 0; margin-bottom: 14px; }
 .login-card .form-row { margin-bottom: 16px; }
 .login-card label { display: block; font-size: 12px; color: var(--ink-2); margin-bottom: 6px; font-weight: 500; }
 .login-card input[type="password"] {
@@ -448,6 +459,22 @@ button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.1
 .account-summary .sum-label { font-size: 11px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .03em; }
 .account-summary .sum-metric strong { font-size: 15px; font-variant-numeric: tabular-nums; color: var(--ink); }
 .account-summary .sum-id { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+.account-summary .sum-name { display: flex; flex-direction: column; gap: 1px; margin-right: 4px; }
+.account-summary .sum-name strong { font-size: 16px; letter-spacing: -0.01em; }
+
+/* 7d / 5h 狀態 gauge chip:label + 迷你進度條 + 百分比(顏色只給狀態) */
+.sum-gauge { display: flex; flex-direction: column; gap: 6px; min-width: 104px; }
+.sum-gauge-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.sum-gauge-pct { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.mini-bar { height: 5px; background: var(--track); border-radius: 3px; overflow: hidden; }
+.mini-fill { height: 100%; border-radius: 3px; transition: width .3s ease; }
+/* background:none 蓋掉全域 .fill-* 漏進來的底色,pct 只要文字顏色 */
+.sum-gauge-pct.fill-green { color: var(--green); background: none; }
+.sum-gauge-pct.fill-yellow { color: var(--amber); background: none; }
+.sum-gauge-pct.fill-red { color: var(--red); background: none; }
+.mini-fill.fill-green, .share-fill.fill-green { background: var(--green-fill); }
+.mini-fill.fill-yellow, .share-fill.fill-yellow { background: var(--amber-fill); }
+.mini-fill.fill-red, .share-fill.fill-red { background: var(--red-fill); }
 
 /* 使用者區塊標題 */
 .users-heading { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 12px; }
@@ -482,10 +509,15 @@ button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.1
 .range-toggle button:hover { background: var(--surface-2); }
 .range-toggle button.active { background: var(--accent); color: var(--accent-ink); }
 
-.uc-metrics { display: flex; gap: 24px; }
-.uc-metrics .m { display: flex; flex-direction: column; gap: 2px; }
-.uc-metrics .m-label { font-size: 11px; color: var(--ink-3); }
-.uc-metrics .m strong { font-size: 14px; font-variant-numeric: tabular-nums; }
+/* hero:本期費用為主數字,token / 佔比為次級,佔比附狀態色細條 */
+.uc-hero { display: flex; align-items: baseline; gap: 10px; }
+.uc-hero-num { font-size: 27px; font-weight: 650; letter-spacing: -0.02em; line-height: 1; color: var(--ink); font-variant-numeric: tabular-nums; }
+.uc-hero-label { font-size: 12px; color: var(--ink-3); }
+.uc-sub { display: flex; gap: 20px; font-size: 13px; color: var(--ink-2); }
+.uc-sub strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+.uc-sub-label { color: var(--ink-3); margin-left: 4px; }
+.share-bar { height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; }
+.share-fill { height: 100%; border-radius: 3px; transition: width .3s ease; }
 
 .user-chart { display: flex; flex-direction: column; gap: 5px; }
 .user-chart canvas { width: 100%; display: block; cursor: crosshair; }

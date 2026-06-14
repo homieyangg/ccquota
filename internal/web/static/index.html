@@ -5,6 +5,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ccquota Dashboard</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="favicon.svg">
+  <meta name="theme-color" content="#18181b">
   <link rel="stylesheet" href="style.css">
   <script defer src="app.js"></script>
   <script defer src="alpine.min.js"></script>
@@ -14,6 +17,7 @@
   <!-- 登入畫面（未認證時顯示；authReady 前不顯示，避免閃一下登入頁） -->
   <div id="login-screen" x-show="authReady && !authed" style="display:none">
     <div class="login-card">
+      <img class="login-logo" src="logo.svg" alt="ccquota">
       <h1 x-text="t('login_title')">Sign in to ccquota</h1>
       <form @submit.prevent="doLogin()">
         <div class="form-row">
@@ -30,7 +34,10 @@
   <div id="app" x-show="authReady && authed" style="display:none">
 
     <header>
-      <h1 x-text="t('heading')">ccquota Dashboard</h1>
+      <div class="brand-lockup">
+        <img class="brand-mark" src="favicon.svg" alt="" aria-hidden="true">
+        <h1 x-text="t('heading')">ccquota Dashboard</h1>
+      </div>
       <div class="header-right">
 
         <!-- 語言下拉選單 -->
@@ -115,18 +122,28 @@
 
               <!-- 帳號摘要列 -->
               <div class="account-summary" :class="{ stale: acct.stale }">
-                <div class="sum-metric">
+                <div class="sum-name">
                   <strong x-text="acct.label || acct.id"></strong>
                   <span class="sum-id" x-text="acct.id"></span>
                 </div>
                 <span class="stale-badge" x-show="acct.stale" x-text="t('stale_warning')" style="display:none"></span>
-                <div class="sum-metric" x-show="acct.has_reading" style="display:none">
-                  <span class="sum-label" x-text="t('seven_day_label')"></span>
-                  <strong x-text="fmtPct(acct.seven_day)"></strong>
+                <div class="sum-gauge" x-show="acct.has_reading" style="display:none">
+                  <div class="sum-gauge-head">
+                    <span class="sum-label" x-text="t('seven_day_label')"></span>
+                    <span class="sum-gauge-pct" :class="fillClass(acct.seven_day || 0)" x-text="fmtPct(acct.seven_day)"></span>
+                  </div>
+                  <div class="mini-bar">
+                    <div class="mini-fill" :class="fillClass(acct.seven_day || 0)" :style="'width:' + clampPct(acct.seven_day) + '%'"></div>
+                  </div>
                 </div>
-                <div class="sum-metric" x-show="acct.has_reading" style="display:none">
-                  <span class="sum-label" x-text="t('five_hour_label')"></span>
-                  <strong x-text="fmtPct(acct.five_hour)"></strong>
+                <div class="sum-gauge" x-show="acct.has_reading" style="display:none">
+                  <div class="sum-gauge-head">
+                    <span class="sum-label" x-text="t('five_hour_label')"></span>
+                    <span class="sum-gauge-pct" :class="fillClass(acct.five_hour || 0)" x-text="fmtPct(acct.five_hour)"></span>
+                  </div>
+                  <div class="mini-bar">
+                    <div class="mini-fill" :class="fillClass(acct.five_hour || 0)" :style="'width:' + clampPct(acct.five_hour) + '%'"></div>
+                  </div>
                 </div>
                 <div class="sum-metric" x-show="acct.has_reading" style="display:none">
                   <span class="sum-label" x-text="t('resets_in')"></span>
@@ -163,33 +180,30 @@
                       </div>
                     </div>
 
-                    <!-- 數字摘要 -->
-                    <div class="uc-metrics">
-                      <div class="m">
-                        <div class="m-label" x-text="t('user_period_cost')"></div>
-                        <strong x-text="'$' + u.cost_usd.toFixed(2)"></strong>
-                      </div>
-                      <div class="m">
-                        <div class="m-label" x-text="t('user_period_tokens')"></div>
-                        <strong x-text="u.tokens"></strong>
-                      </div>
-                      <div class="m">
-                        <div class="m-label" x-text="t('user_share')"></div>
-                        <strong x-text="u.share_pct.toFixed(1) + '%'"></strong>
-                      </div>
+                    <!-- 數字摘要:本期費用為主,token / 佔比為次 -->
+                    <div class="uc-hero">
+                      <span class="uc-hero-num" x-text="'$' + u.cost_usd.toFixed(2)"></span>
+                      <span class="uc-hero-label" x-text="t('user_period_cost')"></span>
+                    </div>
+                    <div class="uc-sub">
+                      <span><strong x-text="u.tokens.toLocaleString()"></strong><span class="uc-sub-label" x-text="t('user_period_tokens')"></span></span>
+                      <span><strong x-text="u.share_pct.toFixed(1) + '%'"></strong><span class="uc-sub-label" x-text="t('user_share')"></span></span>
+                    </div>
+                    <div class="share-bar" :title="u.share_pct.toFixed(1) + '%'">
+                      <div class="share-fill" :class="fillClass(u.share_pct)" :style="'width:' + Math.min(u.share_pct, 100) + '%'"></div>
                     </div>
 
                     <!-- 費用趨勢圖 -->
                     <div class="user-chart">
                       <div class="chart-label" x-text="t('chart_cost')"></div>
-                      <canvas :id="'cost-' + u.user" height="56"
+                      <canvas :id="'cost-' + u.user" height="64"
                         x-effect="$nextTick(() => drawUserCharts(u.user))"></canvas>
                     </div>
 
                     <!-- Token 趨勢圖 -->
                     <div class="user-chart">
                       <div class="chart-label" x-text="t('chart_tokens')"></div>
-                      <canvas :id="'tok-' + u.user" height="56"></canvas>
+                      <canvas :id="'tok-' + u.user" height="64"></canvas>
                     </div>
 
                     <!-- 操作按鈕 -->

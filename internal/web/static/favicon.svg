@@ -1,0 +1,9 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>ccquota</title>
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="#18181B"/>
+  <path d="M18 38a16 16 0 1 1 28 0" stroke="#2DA44E" stroke-width="6" stroke-linecap="round"/>
+  <path d="M20 38a13 13 0 0 0 24 0" stroke="#FFFFFF" stroke-opacity=".9" stroke-width="4" stroke-linecap="round"/>
+  <path d="M32 32l9-9" stroke="#FFFFFF" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="32" cy="32" r="4" fill="#2DA44E"/>
+  <path d="M20 47h24" stroke="#FFFFFF" stroke-opacity=".92" stroke-width="4" stroke-linecap="round"/>
+</svg>
