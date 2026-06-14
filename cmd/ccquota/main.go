@@ -175,10 +175,6 @@ func runServe(s *store.Store) {
 		*interval = 180 * time.Second
 	}
 
-	if os.Getenv("CCQUOTA_ADMIN_PASSWORD") == "" {
-		log.Printf("CCQUOTA_ADMIN_PASSWORD not set, auto-generated password: %s", apipkg.AdminPassword)
-	}
-
 	n := buildNotifier(s)
 	p := buildPoller(s, n)
 	ctx := context.Background()
@@ -226,6 +222,11 @@ func runServe(s *store.Store) {
 	mux.Handle("/api/", apiHandler)
 	mux.Handle("/e/", apiHandler)
 	mux.Handle("/healthz", apiHandler)
+
+	// 只有這次啟動真的自動產生密碼（store 原本沒有 hash）才印出，避免重啟時誤導。
+	if apipkg.SeededAutoPassword {
+		log.Printf("auto-generated admin password (shown once, change it on first login): %s", apipkg.AdminPassword)
+	}
 
 	ingestToken := os.Getenv("CCQUOTA_INGEST_TOKEN")
 	if ingestToken != "" {

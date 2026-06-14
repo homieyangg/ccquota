@@ -95,6 +95,7 @@ document.addEventListener('alpine:init', () => {
     langOpen: false,
 
     // 認證狀態
+    authReady: false, // checkAuth 完成前不顯示任何畫面，避免登入頁閃一下
     authed: false,
     mustChange: false,
     _lastLoginPassword: '',
@@ -506,6 +507,7 @@ document.addEventListener('alpine:init', () => {
 
       // 檢查認證狀態
       await this.checkAuth();
+      this.authReady = true;
 
       if (this.authed) {
         if (this.mustChange) {

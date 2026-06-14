@@ -14,7 +14,7 @@ msg() {
         no_settings)    echo "找不到設定檔，略過：$extra" ;;
         backed_up)      echo "已備份設定檔至：$extra" ;;
         done)           echo "✓ 已移除 ccquota OTel 設定。請重新啟動 Claude Code。" ;;
-        restart)        echo "提示：關閉並重新開啟 Claude Code（或執行 claude --restart）。" ;;
+        restart)        echo "提示：關閉並重新開啟 Claude Code。" ;;
         unknown_arg)    echo "錯誤：未知參數：$extra" ;;
         *)              echo "$key $extra" ;;
       esac
@@ -25,7 +25,7 @@ msg() {
         no_settings)    echo "找不到配置文件，跳过：$extra" ;;
         backed_up)      echo "已备份配置文件至：$extra" ;;
         done)           echo "✓ 已移除 ccquota OTel 配置。请重启 Claude Code。" ;;
-        restart)        echo "提示：关闭并重新打开 Claude Code（或执行 claude --restart）。" ;;
+        restart)        echo "提示：关闭并重新打开 Claude Code。" ;;
         unknown_arg)    echo "错误：未知参数：$extra" ;;
         *)              echo "$key $extra" ;;
       esac
@@ -36,7 +36,7 @@ msg() {
         no_settings)    echo "Settings file not found, nothing to do: $extra" ;;
         backed_up)      echo "Backed up settings to: $extra" ;;
         done)           echo "✓ ccquota OTel settings removed. Restart Claude Code to apply." ;;
-        restart)        echo "Hint: close and reopen Claude Code (or run: claude --restart)." ;;
+        restart)        echo "Hint: close and reopen Claude Code." ;;
         unknown_arg)    echo "Error: unknown argument: $extra" ;;
         *)              echo "$key $extra" ;;
       esac

@@ -11,8 +11,8 @@
 </head>
 <body x-data="dashboard" x-init="init()">
 
-  <!-- 登入畫面（未認證時顯示） -->
-  <div id="login-screen" x-show="!authed" style="display:none">
+  <!-- 登入畫面（未認證時顯示；authReady 前不顯示，避免閃一下登入頁） -->
+  <div id="login-screen" x-show="authReady && !authed" style="display:none">
     <div class="login-card">
       <h1 x-text="t('login_title')">Sign in to ccquota</h1>
       <form @submit.prevent="doLogin()">
@@ -27,7 +27,7 @@
   </div>
 
   <!-- 主畫面（已認證時顯示） -->
-  <div id="app" x-show="authed" style="display:none">
+  <div id="app" x-show="authReady && authed" style="display:none">
 
     <header>
       <h1 x-text="t('heading')">ccquota Dashboard</h1>

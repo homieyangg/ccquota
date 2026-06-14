@@ -36,6 +36,10 @@ const (
 // 若 CCQUOTA_ADMIN_PASSWORD 已設定則為其值；否則為自動產生值（會被 log）。
 var AdminPassword string
 
+// SeededAutoPassword 只有「這次啟動真的自動產生並存了密碼」時為 true。
+// 重啟時 store 已有 hash 就不會再 seed，也就不該再 log 那組沒用到的密碼。
+var SeededAutoPassword bool
+
 func init() {
 	AdminPassword = os.Getenv("CCQUOTA_ADMIN_PASSWORD")
 	if AdminPassword == "" {
@@ -90,6 +94,7 @@ func bootstrapPassword(s *store.Store) error {
 	mustChange := "0"
 	if os.Getenv("CCQUOTA_ADMIN_PASSWORD") == "" {
 		mustChange = "1"
+		SeededAutoPassword = true
 	}
 	h, salt, err := hashPassword(AdminPassword)
 	if err != nil {
@@ -679,7 +684,7 @@ msg() {
         backed_up) echo "已備份設定檔至：$extra" ;;
         created)  echo "已建立新設定檔：$extra" ;;
         done)     echo "✓ 安裝完成！請重新啟動 Claude Code 以套用設定。" ;;
-        restart)  echo "提示：關閉並重新開啟 Claude Code（或執行 claude --restart）。" ;;
+        restart)  echo "提示：關閉並重新開啟 Claude Code。" ;;
         *)        echo "$key $extra" ;;
       esac ;;
     zh-CN)
@@ -688,7 +693,7 @@ msg() {
         backed_up) echo "已备份配置文件至：$extra" ;;
         created)  echo "已创建新配置文件：$extra" ;;
         done)     echo "✓ 安装完成！请重启 Claude Code 以应用配置。" ;;
-        restart)  echo "提示：关闭并重新打开 Claude Code（或执行 claude --restart）。" ;;
+        restart)  echo "提示：关闭并重新打开 Claude Code。" ;;
         *)        echo "$key $extra" ;;
       esac ;;
     *)
@@ -697,7 +702,7 @@ msg() {
         backed_up) echo "Backed up settings to: $extra" ;;
         created)  echo "Created settings file: $extra" ;;
         done)     echo "✓ Installation complete! Restart Claude Code to apply settings." ;;
-        restart)  echo "Hint: close and reopen Claude Code (or run: claude --restart)." ;;
+        restart)  echo "Hint: close and reopen Claude Code." ;;
         *)        echo "$key $extra" ;;
       esac ;;
   esac

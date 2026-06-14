@@ -20,7 +20,7 @@ msg() {
         backed_up)       echo "已備份設定檔至：$extra" ;;
         created)         echo "已建立新設定檔：$extra" ;;
         done)            echo "✓ 安裝完成！請重新啟動 Claude Code 以套用設定。" ;;
-        restart)         echo "提示：關閉並重新開啟 Claude Code（或執行 claude --restart）。" ;;
+        restart)         echo "提示：關閉並重新開啟 Claude Code。" ;;
         *)               echo "$key $extra" ;;
       esac
       ;;
@@ -35,7 +35,7 @@ msg() {
         backed_up)       echo "已备份配置文件至：$extra" ;;
         created)         echo "已创建新配置文件：$extra" ;;
         done)            echo "✓ 安装完成！请重启 Claude Code 以应用配置。" ;;
-        restart)         echo "提示：关闭并重新打开 Claude Code（或执行 claude --restart）。" ;;
+        restart)         echo "提示：关闭并重新打开 Claude Code。" ;;
         *)               echo "$key $extra" ;;
       esac
       ;;
@@ -50,7 +50,7 @@ msg() {
         backed_up)       echo "Backed up settings to: $extra" ;;
         created)         echo "Created settings file: $extra" ;;
         done)            echo "✓ Installation complete! Restart Claude Code to apply settings." ;;
-        restart)         echo "Hint: close and reopen Claude Code (or run: claude --restart)." ;;
+        restart)         echo "Hint: close and reopen Claude Code." ;;
         *)               echo "$key $extra" ;;
       esac
       ;;
