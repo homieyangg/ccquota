@@ -101,7 +101,7 @@ func TestThresholdsDedup(t *testing.T) {
 		FiveHourCrit: 95,
 	}, s, sink)
 
-	// 7d=76% (>warn, <crit), 5h=50% (ok) — 應發 warn
+	// 7d=76% (>warn, <crit), 5h=50% (ok), 應發 warn
 	if err := n.Thresholds(context.Background(), "acct1", 76, 50, 1000, 2000); err != nil {
 		t.Fatal(err)
 	}

@@ -61,7 +61,7 @@ function drawSparkline(canvas, points) {
   if (!points || points.length < 2) {
     ctx.fillStyle = '#30363d';
     ctx.font = '10px sans-serif';
-    ctx.fillText('—', w / 2 - 4, h / 2 + 3);
+    ctx.fillText('N/A', w / 2 - 4, h / 2 + 3);
     return;
   }
 
@@ -141,7 +141,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     fmtPct(v) {
-      return v == null ? '—' : v.toFixed(1) + '%';
+      return v == null ? 'N/A' : v.toFixed(1) + '%';
     },
 
     fillClass(pct) {
@@ -153,7 +153,7 @@ document.addEventListener('alpine:init', () => {
     countdown(resetsAt) {
       if (!resetsAt) return '';
       const diff = resetsAt - Math.floor(Date.now() / 1000);
-      if (diff <= 0) return '—';
+      if (diff <= 0) return 'N/A';
       const d = Math.floor(diff / 86400);
       const h = Math.floor((diff % 86400) / 3600);
       const m = Math.floor((diff % 3600) / 60);
