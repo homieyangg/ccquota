@@ -146,7 +146,7 @@ func buildNotifier(s *store.Store) *alert.Notifier {
 	}
 
 	if len(sinks) == 0 {
-		log.Printf("alert: no sinks configured — notifications disabled")
+		log.Printf("alert: no sinks configured, notifications disabled")
 	}
 
 	return alert.NewNotifier(cfg, s, sinks...)
@@ -176,7 +176,7 @@ func runServe(s *store.Store) {
 	}
 
 	if os.Getenv("CCQUOTA_ADMIN_PASSWORD") == "" {
-		log.Printf("CCQUOTA_ADMIN_PASSWORD not set — auto-generated password: %s", apipkg.AdminPassword)
+		log.Printf("CCQUOTA_ADMIN_PASSWORD not set, auto-generated password: %s", apipkg.AdminPassword)
 	}
 
 	n := buildNotifier(s)
