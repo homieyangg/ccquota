@@ -19,6 +19,7 @@ import (
 	"github.com/ccquota/ccquota/internal/ingest"
 	"github.com/ccquota/ccquota/internal/oauth"
 	"github.com/ccquota/ccquota/internal/poller"
+	"github.com/ccquota/ccquota/internal/secret"
 	"github.com/ccquota/ccquota/internal/store"
 	"github.com/ccquota/ccquota/internal/usage"
 	"github.com/ccquota/ccquota/internal/web"
@@ -240,6 +241,76 @@ func buildNotifier(s *store.Store) *alert.Notifier {
 	return alert.NewNotifier(cfg, s, sinks...)
 }
 
+// loadCipher 從 env 或 dataDir 下的 keyfile 取得加密金鑰。
+func loadCipher() *secret.Cipher {
+	dbPath := os.Getenv("CCQUOTA_DB")
+	if dbPath == "" {
+		dbPath = "ccquota.db"
+	}
+	keyfile := filepath.Join(filepath.Dir(dbPath), "secret.key")
+	key, err := secret.LoadKey(os.Getenv("CCQUOTA_SECRET_KEY"), keyfile)
+	if err != nil {
+		log.Fatalf("load secret key: %v", err)
+	}
+	c, err := secret.New(key)
+	if err != nil {
+		log.Fatalf("init cipher: %v", err)
+	}
+	return c
+}
+
+// buildNotifierFromStore 每輪呼叫:從 DB 讀 enabled 頻道(解密 secret)+ 門檻建 Notifier。
+// DB 沒有任何頻道時 fallback 到 env 設定(向後相容)。
+func buildNotifierFromStore(s *store.Store, c *secret.Cipher) *alert.Notifier {
+	channels, err := s.ListChannels()
+	if err != nil {
+		log.Printf("notifier: list channels: %v", err)
+	}
+	var sinks []alert.Sink
+	for _, ch := range channels {
+		if !ch.Enabled {
+			continue
+		}
+		var raw map[string]string
+		if err := json.Unmarshal([]byte(ch.Config), &raw); err != nil {
+			log.Printf("notifier: bad channel %d config: %v", ch.ID, err)
+			continue
+		}
+		dec := make(map[string]string, len(raw))
+		for k, v := range raw {
+			pt, err := c.Decrypt(v)
+			if err != nil {
+				log.Printf("notifier: decrypt channel %d field %s: %v", ch.ID, k, err)
+				pt = ""
+			}
+			dec[k] = pt
+		}
+		sink, err := alert.BuildSink(ch.Type, dec)
+		if err != nil {
+			log.Printf("notifier: %v", err)
+			continue
+		}
+		sinks = append(sinks, sink)
+	}
+
+	th, err := s.GetAlertThresholds()
+	if err != nil {
+		log.Printf("notifier: thresholds: %v", err)
+	}
+	cfg := alert.Config{
+		Lang:           os.Getenv("CCQUOTA_LANG"),
+		WeeklyWarn:     th.SevenDayWarn,
+		WeeklyCrit:     th.SevenDayCrit,
+		FiveHourCrit:   th.FiveHourCrit,
+		PollerStaleSec: envInt64("CCQUOTA_POLLER_STALE_SEC", 1800),
+	}
+
+	if len(sinks) == 0 {
+		return buildNotifier(s) // fallback 到 env
+	}
+	return alert.NewNotifier(cfg, s, sinks...)
+}
+
 func buildPoller(s *store.Store, n *alert.Notifier) *poller.Poller {
 	return &poller.Poller{
 		Store: s,
@@ -263,11 +334,21 @@ func runServe(s *store.Store) {
 		*interval = 180 * time.Second
 	}
 
+	cipher := loadCipher()
 	n := buildNotifier(s)
 	p := buildPoller(s, n)
+	// 覆寫 OnReset,每次重置都從 DB 重讀最新頻道設定。
+	p.OnReset = func(acct string, from, to float64) {
+		log.Printf("RESET account=%s 7d %.0f%% -> %.0f%%", acct, from, to)
+		if err := buildNotifierFromStore(s, cipher).Reset(context.Background(), acct, from, to); err != nil {
+			log.Printf("alert reset error: %v", err)
+		}
+	}
 	ctx := context.Background()
 	go func() {
 		for {
+			// 每輪重建 notifier，確保頻道設定即時生效。
+			n := buildNotifierFromStore(s, cipher)
 			pollCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			p.PollAll(pollCtx)
 			cancel()
@@ -306,6 +387,7 @@ func runServe(s *store.Store) {
 	apiHandler := apipkg.New(s, oc, staleSec,
 		os.Getenv("CCQUOTA_INGEST_TOKEN"),
 		os.Getenv("CCQUOTA_PUBLIC_URL"),
+		cipher,
 	)
 	mux.Handle("/api/", apiHandler)
 	mux.Handle("/e/", apiHandler)

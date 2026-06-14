@@ -18,8 +18,10 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/ccquota/ccquota/internal/alert"
 	"github.com/ccquota/ccquota/internal/calc"
 	"github.com/ccquota/ccquota/internal/oauth"
+	"github.com/ccquota/ccquota/internal/secret"
 	"github.com/ccquota/ccquota/internal/store"
 )
 
@@ -143,6 +145,7 @@ type handler struct {
 	staleSec    int64
 	ingestToken string
 	publicURL   string
+	cipher      *secret.Cipher
 	mu          sync.Mutex
 	pending     map[string]pendingLogin
 }
@@ -151,7 +154,7 @@ type handler struct {
 // staleSec 為帳號資料視為過時的秒數閾值（對應 CCQUOTA_POLLER_STALE_SEC）。
 // ingestToken 為 /v1/metrics 的 Bearer token（空字串 = 關閉 enroll 功能）。
 // publicURL 為對外 URL（空字串時從 request 自動推導）。
-func New(s *store.Store, oc *oauth.Client, staleSec int64, ingestToken, publicURL string) http.Handler {
+func New(s *store.Store, oc *oauth.Client, staleSec int64, ingestToken, publicURL string, cipher *secret.Cipher) http.Handler {
 	// 啟動時 bootstrap 密碼 hash（若尚未存過）
 	if err := bootstrapPassword(s); err != nil {
 		// 非致命，但要 log
@@ -164,6 +167,7 @@ func New(s *store.Store, oc *oauth.Client, staleSec int64, ingestToken, publicUR
 		staleSec:    staleSec,
 		ingestToken: ingestToken,
 		publicURL:   strings.TrimRight(publicURL, "/"),
+		cipher:      cipher,
 		pending:     make(map[string]pendingLogin),
 	}
 	mux := http.NewServeMux()
@@ -183,6 +187,11 @@ func New(s *store.Store, oc *oauth.Client, staleSec int64, ingestToken, publicUR
 	mux.Handle("/api/auth/change-password", adminAuth(s, http.HandlerFunc(h.handleChangePassword)))
 	// /e/<token>: enrollment script，不需要 admin auth
 	mux.HandleFunc("/e/", h.handleEnrollScript)
+	// 通知設定端點
+	mux.Handle("/api/notifications", adminAuth(s, http.HandlerFunc(h.handleNotifications)))
+	mux.Handle("/api/notifications/channels", adminAuth(s, http.HandlerFunc(h.handleChannelsCollection)))
+	mux.Handle("/api/notifications/channels/", adminAuth(s, http.HandlerFunc(h.handleChannelItem)))
+	mux.Handle("/api/notifications/thresholds", adminAuth(s, http.HandlerFunc(h.handleThresholds)))
 	return mux
 }
 
@@ -798,4 +807,224 @@ func jsonError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// maskSecret 把 secret 遮成 ••••<last4>;短於 4 碼全遮。
+func maskSecret(plain string) string {
+	if plain == "" {
+		return ""
+	}
+	if len(plain) <= 4 {
+		return "••••"
+	}
+	return "••••" + plain[len(plain)-4:]
+}
+
+type channelView struct {
+	ID      int64             `json:"id"`
+	Type    string            `json:"type"`
+	Enabled bool              `json:"enabled"`
+	Config  map[string]string `json:"config"` // secret 已遮蔽
+}
+
+// telegram 的 secret 欄位集合(其餘型別之後擴充)。
+var secretFields = map[string][]string{
+	"telegram": {"bot_token"},
+	"webhook":  {},
+}
+
+// handleNotifications: GET 回頻道(遮罩)+ 門檻。
+func (h *handler) handleNotifications(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	chs, err := h.s.ListChannels()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	views := make([]channelView, 0, len(chs))
+	for _, ch := range chs {
+		var raw map[string]string
+		json.Unmarshal([]byte(ch.Config), &raw)
+		masked := make(map[string]string, len(raw))
+		secrets := map[string]bool{}
+		for _, f := range secretFields[ch.Type] {
+			secrets[f] = true
+		}
+		for k, v := range raw {
+			if secrets[k] {
+				pt, _ := h.cipher.Decrypt(v)
+				masked[k] = maskSecret(pt)
+			} else {
+				masked[k] = v
+			}
+		}
+		views = append(views, channelView{ID: ch.ID, Type: ch.Type, Enabled: ch.Enabled, Config: masked})
+	}
+	th, _ := h.s.GetAlertThresholds()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"channels": views, "thresholds": th})
+}
+
+type channelReq struct {
+	ID      int64             `json:"id"`
+	Type    string            `json:"type"`
+	Enabled bool              `json:"enabled"`
+	Config  map[string]string `json:"config"`
+}
+
+// encryptConfig 把 secret 欄位加密;沒重送(空字串)的 secret 保留舊值 prev。
+func (h *handler) encryptConfig(chType string, in map[string]string, prev map[string]string) (string, error) {
+	secrets := map[string]bool{}
+	for _, f := range secretFields[chType] {
+		secrets[f] = true
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		if secrets[k] {
+			if v == "" && prev != nil {
+				out[k] = prev[k]
+				continue
+			}
+			enc, err := h.cipher.Encrypt(v)
+			if err != nil {
+				return "", err
+			}
+			out[k] = enc
+		} else {
+			out[k] = v
+		}
+	}
+	b, err := json.Marshal(out)
+	return string(b), err
+}
+
+// handleChannelsCollection: POST 新增頻道。
+func (h *handler) handleChannelsCollection(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req channelReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad json", 400)
+		return
+	}
+	if _, ok := secretFields[req.Type]; !ok {
+		http.Error(w, "unknown channel type", 400)
+		return
+	}
+	cfg, err := h.encryptConfig(req.Type, req.Config, nil)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	id, err := h.s.CreateChannel(store.Channel{Type: req.Type, Config: cfg, Enabled: req.Enabled})
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"id": id})
+}
+
+// handleChannelItem: PUT 更新 / DELETE 刪除 / POST .../test 測試。
+func (h *handler) handleChannelItem(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/notifications/channels/")
+	test := false
+	if strings.HasSuffix(rest, "/test") {
+		test = true
+		rest = strings.TrimSuffix(rest, "/test")
+	}
+	id, err := strconv.ParseInt(rest, 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	cur, ok, err := h.s.GetChannel(id)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch {
+	case test && r.Method == http.MethodPost:
+		h.testChannel(w, r, cur)
+	case r.Method == http.MethodPut:
+		var req channelReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad json", 400)
+			return
+		}
+		var prev map[string]string
+		json.Unmarshal([]byte(cur.Config), &prev)
+		cfg, err := h.encryptConfig(cur.Type, req.Config, prev)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		if err := h.s.UpdateChannel(store.Channel{ID: id, Type: cur.Type, Config: cfg, Enabled: req.Enabled}); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	case r.Method == http.MethodDelete:
+		if err := h.s.DeleteChannel(id); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// testChannel 用該頻道送一則測試訊息。
+func (h *handler) testChannel(w http.ResponseWriter, r *http.Request, ch store.Channel) {
+	var raw map[string]string
+	json.Unmarshal([]byte(ch.Config), &raw)
+	dec := make(map[string]string, len(raw))
+	for k, v := range raw {
+		pt, _ := h.cipher.Decrypt(v)
+		dec[k] = pt
+	}
+	sink, err := alert.BuildSink(ch.Type, dec)
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+	if err := sink.Send(r.Context(), "ccquota test message ✅"); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// handleThresholds: PUT 更新門檻。
+func (h *handler) handleThresholds(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPut {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var t store.AlertThresholds
+	if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
+		http.Error(w, "bad json", 400)
+		return
+	}
+	if err := h.s.SetAlertThresholds(t); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
