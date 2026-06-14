@@ -94,6 +94,10 @@ go test ./...   # run tests
 
 The frontend is vanilla JS + Alpine.js, embedded via `go:embed`. No build step.
 
+## Community
+
+Shared with the [LINUX DO](https://linux.do) community. Feedback and issues welcome.
+
 ## License
 
 [MIT](LICENSE)

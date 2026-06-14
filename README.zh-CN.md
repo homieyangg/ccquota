@@ -94,6 +94,10 @@ go test ./...   # 跑测试
 
 前端是 vanilla JS + Alpine.js,用 `go:embed` 内嵌,没有 build step。
 
+## 社区
+
+在 [LINUX DO](https://linux.do) 社区分享,欢迎反馈与 issue。
+
 ## 授权
 
 [MIT](LICENSE)
