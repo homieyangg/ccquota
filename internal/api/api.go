@@ -191,6 +191,8 @@ func New(s *store.Store, oc *oauth.Client, staleSec int64, ingestToken, publicUR
 	mux.Handle("/api/notifications/channels", adminAuth(s, http.HandlerFunc(h.handleChannelsCollection)))
 	mux.Handle("/api/notifications/channels/", adminAuth(s, http.HandlerFunc(h.handleChannelItem)))
 	mux.Handle("/api/notifications/thresholds", adminAuth(s, http.HandlerFunc(h.handleThresholds)))
+	mux.Handle("/api/user-series", adminAuth(s, http.HandlerFunc(h.handleUserSeries)))
+	mux.Handle("/api/users", adminAuth(s, http.HandlerFunc(h.handleDeleteUser)))
 	return mux
 }
 
@@ -662,7 +664,8 @@ func (h *handler) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	}
 	token := base64.RawURLEncoding.EncodeToString(raw)
 
-	expiresAt := time.Now().Unix() + 24*3600
+	ttlDays := envInt64Default("CCQUOTA_ENROLL_TTL_DAYS", 30)
+	expiresAt := time.Now().Unix() + ttlDays*24*3600
 	if err := h.s.CreateEnrollment(token, req.Account, req.User, expiresAt); err != nil {
 		jsonError(w, "db error", http.StatusInternalServerError)
 		return
@@ -806,4 +809,82 @@ func jsonError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
+// envInt64Default 讀 env int64，空或非法則回 def。
+func envInt64Default(key string, def int64) int64 {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return def
+}
+
+type seriesPoint struct {
+	TS     int64   `json:"ts"`
+	Cost   float64 `json:"cost_usd"`
+	Tokens int64   `json:"tokens"`
+}
+
+// handleUserSeries: GET /api/user-series?account=&user=&range=24h|7d
+// 回傳 {bucket_sec, points:[{ts,cost_usd,tokens}]}，桶為零填（連續）。
+func (h *handler) handleUserSeries(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	acct := r.URL.Query().Get("account")
+	user := r.URL.Query().Get("user")
+	if acct == "" || user == "" {
+		jsonError(w, "account and user required", http.StatusBadRequest)
+		return
+	}
+	var rangeSec, bucketSec int64 = 24 * 3600, 600
+	if r.URL.Query().Get("range") == "7d" {
+		rangeSec, bucketSec = 7*24*3600, 7200
+	}
+	now := time.Now().Unix()
+	sinceTS := now - rangeSec
+	buckets, err := h.s.UserSeries(acct, user, sinceTS, bucketSec)
+	if err != nil {
+		jsonError(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	byTS := make(map[int64]store.SeriesBucket, len(buckets))
+	for _, b := range buckets {
+		byTS[b.TS] = b
+	}
+	start := (sinceTS / bucketSec) * bucketSec
+	end := (now / bucketSec) * bucketSec
+	points := make([]seriesPoint, 0, (end-start)/bucketSec+1)
+	for t := start; t <= end; t += bucketSec {
+		if b, ok := byTS[t]; ok {
+			points = append(points, seriesPoint{TS: t, Cost: b.Cost, Tokens: b.Tokens})
+		} else {
+			points = append(points, seriesPoint{TS: t, Cost: 0, Tokens: 0})
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"bucket_sec": bucketSec, "points": points})
+}
+
+// handleDeleteUser: DELETE /api/users?account=&user=
+func (h *handler) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	acct := r.URL.Query().Get("account")
+	user := r.URL.Query().Get("user")
+	if acct == "" || user == "" {
+		jsonError(w, "account and user required", http.StatusBadRequest)
+		return
+	}
+	if err := h.s.DeleteUser(acct, user); err != nil {
+		jsonError(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }

@@ -787,6 +787,55 @@ func TestNotificationsUnknownType(t *testing.T) {
 	}
 }
 
+// TestUserSeriesEndpoint 驗證 GET /api/user-series 回傳正確結構。
+func TestUserSeriesEndpoint(t *testing.T) {
+	s := testStore(t)
+	now := time.Now().Unix()
+	_ = s.InsertUserCost("main", "gary", now-3600, 1.5, 500)
+	_ = s.InsertUserCost("main", "gary", now-1800, 2.5, 800)
+
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	resp := authedGet(t, h, "/api/user-series?account=main&user=gary&range=7d")
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+	var out map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if _, ok := out["bucket_sec"]; !ok {
+		t.Error("回應缺少 bucket_sec 欄位")
+	}
+	if _, ok := out["points"]; !ok {
+		t.Error("回應缺少 points 欄位")
+	}
+}
+
+// TestDeleteUserEndpoint 驗證 DELETE /api/users 成功刪除指定使用者。
+func TestDeleteUserEndpoint(t *testing.T) {
+	s := testStore(t)
+	now := time.Now().Unix()
+	_ = s.InsertUserCost("main", "gary", now-100, 1.0, 100)
+
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/users?account=main&user=gary", nil)
+	req.SetBasicAuth("admin", AdminPassword)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	users, err := s.DistinctUsers("main")
+	if err != nil {
+		t.Fatalf("DistinctUsers: %v", err)
+	}
+	if len(users) != 0 {
+		t.Fatalf("刪除後應無使用者，剩餘: %v", users)
+	}
+}
+
 // TestNotificationsThresholdsRoundTrip 驗證 PUT 門檻後 GET 取回新值。
 func TestNotificationsThresholdsRoundTrip(t *testing.T) {
 	s := testStore(t)
