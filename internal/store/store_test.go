@@ -1,6 +1,8 @@
 package store
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestUpsertAndGetAccount(t *testing.T) {
 	s, err := Open(":memory:")
@@ -198,5 +200,50 @@ func TestUserCostRoundTrip(t *testing.T) {
 	}
 	if empty != 0 {
 		t.Fatalf("empty account cost: want 0, got %f", empty)
+	}
+}
+
+func TestEnrollmentRoundTrip(t *testing.T) {
+	s, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	const now = int64(1000)
+
+	// 建立 enrollment
+	if err := s.CreateEnrollment("tok1", "acct1", "alice", now+3600); err != nil {
+		t.Fatal(err)
+	}
+
+	// 正常取得
+	acctID, user, ok, err := s.GetEnrollment("tok1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
+	if acctID != "acct1" || user != "alice" {
+		t.Fatalf("wrong values: acctID=%q user=%q", acctID, user)
+	}
+
+	// 不存在的 token
+	_, _, ok2, err2 := s.GetEnrollment("no-such-token", now)
+	if err2 != nil {
+		t.Fatal(err2)
+	}
+	if ok2 {
+		t.Fatal("expected ok=false for missing token")
+	}
+
+	// 已過期
+	_, _, ok3, err3 := s.GetEnrollment("tok1", now+7200)
+	if err3 != nil {
+		t.Fatal(err3)
+	}
+	if ok3 {
+		t.Fatal("expected ok=false for expired token")
 	}
 }

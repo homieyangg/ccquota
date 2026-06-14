@@ -79,6 +79,12 @@ CREATE TABLE IF NOT EXISTS user_cost (
   tokens INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_user_cost_acct_ts ON user_cost(account_id, ts);
+CREATE TABLE IF NOT EXISTS enrollments (
+  token TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  user TEXT NOT NULL,
+  expires_at INTEGER NOT NULL
+);
 `)
 	return err
 }
@@ -231,6 +237,33 @@ func (s *Store) AlertAlreadyFired(account, kind, windowKey string) (bool, error)
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// CreateEnrollment 建立一筆一次性 enrollment token。
+func (s *Store) CreateEnrollment(token, accountID, user string, expiresAt int64) error {
+	_, err := s.db.Exec(
+		`INSERT INTO enrollments (token, account_id, user, expires_at) VALUES (?, ?, ?, ?)`,
+		token, accountID, user, expiresAt,
+	)
+	return err
+}
+
+// GetEnrollment 查詢 enrollment token；now > expires_at 時 ok=false。
+func (s *Store) GetEnrollment(token string, now int64) (accountID, user string, ok bool, err error) {
+	row := s.db.QueryRow(
+		`SELECT account_id, user, expires_at FROM enrollments WHERE token=?`, token,
+	)
+	var expiresAt int64
+	if e := row.Scan(&accountID, &user, &expiresAt); e != nil {
+		if e == sql.ErrNoRows {
+			return "", "", false, nil
+		}
+		return "", "", false, e
+	}
+	if now > expiresAt {
+		return "", "", false, nil
+	}
+	return accountID, user, true, nil
 }
 
 // MarkAlertFired 記錄通知已發送（upsert；ts 為 unix seconds）。
