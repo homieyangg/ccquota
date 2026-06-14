@@ -101,6 +101,34 @@ function drawSparkline(canvas, points) {
   ctx.stroke();
 }
 
+// ── Series area chart (canvas) ────────────────────────────────────────────────
+
+function drawSeriesChart(canvas, points, valueFn, color) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.offsetWidth || 300;
+  const h = 56;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
+  const vals = (points || []).map(valueFn);
+  if (vals.length < 2) {
+    ctx.fillStyle = '#a1a1aa'; ctx.font = '10px sans-serif'; ctx.fillText('N/A', w / 2 - 6, h / 2);
+    return;
+  }
+  const max = Math.max(...vals, 0.0000001);
+  const pad = 4, yw = h - pad * 2, xw = w - pad * 2;
+  const x = i => pad + (i / (vals.length - 1)) * xw;
+  const y = v => pad + yw - (v / max) * yw;
+  // area
+  ctx.beginPath(); ctx.moveTo(x(0), h - pad);
+  vals.forEach((v, i) => ctx.lineTo(x(i), y(v)));
+  ctx.lineTo(x(vals.length - 1), h - pad); ctx.closePath();
+  ctx.fillStyle = color + '22'; ctx.fill();
+  // line
+  ctx.beginPath();
+  vals.forEach((v, i) => i === 0 ? ctx.moveTo(x(i), y(v)) : ctx.lineTo(x(i), y(v)));
+  ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke();
+}
+
 // ── Alpine component ──────────────────────────────────────────────────────────
 
 document.addEventListener('alpine:init', () => {
@@ -144,6 +172,11 @@ document.addEventListener('alpine:init', () => {
 
     // per-account sparkline history keyed by id
     historyMap: {},
+
+    // per-user series data and range selection
+    userRanges: {},
+    userSeries: {},
+    copyMsg: '',
 
     // countdown timer handle
     _countdownHandle: null,
@@ -421,6 +454,10 @@ document.addEventListener('alpine:init', () => {
         }
         // fetch sparklines after accounts update
         await this._loadSparklines(data);
+        // kick off per-user series loads
+        for (const acct of this.accounts) {
+          for (const u of (acct.cost?.users || [])) this.loadUserSeries(acct.id, u.user);
+        }
       } catch (e) {
         console.error('refresh failed', e);
       }
@@ -454,6 +491,50 @@ document.addEventListener('alpine:init', () => {
       for (const a of this.accounts) {
         if (a.has_reading) this._drawSparkline(a.id);
       }
+    },
+
+    // ── Per-user series ───────────────────────────────────────────────────────
+
+    rangeFor(user) { return this.userRanges[user] || '24h'; },
+
+    async setUserRange(account, user, range) {
+      this.userRanges = { ...this.userRanges, [user]: range };
+      await this.loadUserSeries(account, user);
+    },
+
+    async loadUserSeries(account, user) {
+      try {
+        const r = this.rangeFor(user);
+        const data = await apiGet(`/api/user-series?account=${encodeURIComponent(account)}&user=${encodeURIComponent(user)}&range=${r}`);
+        this.userSeries = { ...this.userSeries, [user]: data };
+        this.$nextTick(() => this.drawUserCharts(user));
+      } catch (e) { console.error('user-series', e); }
+    },
+
+    drawUserCharts(user) {
+      const data = this.userSeries[user];
+      if (!data) return;
+      const bs = data.bucket_sec || 600;
+      const costCanvas = document.getElementById('cost-' + user);
+      const tokCanvas = document.getElementById('tok-' + user);
+      if (costCanvas) drawSeriesChart(costCanvas, data.points, p => p.cost_usd / (bs / 3600), '#18181b');
+      if (tokCanvas) drawSeriesChart(tokCanvas, data.points, p => p.tokens / bs, '#3b82f6');
+    },
+
+    async copyInstall(account, user) {
+      try {
+        const data = await apiPost('/api/enroll', { account, user });
+        await navigator.clipboard.writeText(`bash <(curl -fsSL -A ccquota-setup ${data.url})`);
+        this.copyMsg = user; setTimeout(() => { this.copyMsg = ''; }, 1500);
+      } catch (e) { console.error('copy install', e); }
+    },
+
+    async removeUser(account, user) {
+      if (!confirm(this.t('delete_user_confirm'))) return;
+      try {
+        await apiDelete(`/api/users?account=${encodeURIComponent(account)}&user=${encodeURIComponent(user)}`);
+        await this.refreshAccounts();
+      } catch (e) { console.error('delete user', e); }
     },
 
     // ── Modal helpers ─────────────────────────────────────────────────────────

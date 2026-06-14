@@ -83,5 +83,19 @@
   "notif_test_fail": "Test failed",
   "notif_saved": "Saved",
   "notif_no_channels": "No channels yet",
-  "notif_token_keep_hint": "Leave blank to keep current token"
+  "notif_token_keep_hint": "Leave blank to keep current token",
+  "account_summary": "Account",
+  "users_section": "Users",
+  "range_24h": "24h",
+  "range_7d": "7d",
+  "chart_cost": "Cost ($/hr)",
+  "chart_tokens": "Tokens/sec",
+  "user_period_cost": "Cost this period",
+  "user_period_tokens": "Tokens this period",
+  "user_share": "Share",
+  "copy_install": "Copy install link",
+  "copied": "Copied",
+  "delete_user": "Delete user",
+  "delete_user_confirm": "Delete this user's data? If their client is still reporting, they will reappear on the next report. Uninstall the client to stop it.",
+  "no_users": "No users reporting yet"
 }

@@ -83,5 +83,19 @@
   "notif_test_fail": "測試失敗",
   "notif_saved": "已儲存",
   "notif_no_channels": "尚無頻道",
-  "notif_token_keep_hint": "留空表示沿用現有 token"
+  "notif_token_keep_hint": "留空表示沿用現有 token",
+  "account_summary": "帳號",
+  "users_section": "使用者",
+  "range_24h": "24h",
+  "range_7d": "7d",
+  "chart_cost": "費用($/小時)",
+  "chart_tokens": "Token/秒",
+  "user_period_cost": "本期費用",
+  "user_period_tokens": "本期 token",
+  "user_share": "佔比",
+  "copy_install": "複製安裝連結",
+  "copied": "已複製",
+  "delete_user": "刪除使用者",
+  "delete_user_confirm": "要刪除這個使用者的資料嗎?如果他的 client 還在上報,下次上報就會再出現。要徹底停止請在那台機器移除 client。",
+  "no_users": "尚無使用者上報"
 }

@@ -83,5 +83,19 @@
   "notif_test_fail": "测试失败",
   "notif_saved": "已保存",
   "notif_no_channels": "暂无频道",
-  "notif_token_keep_hint": "留空表示沿用现有 token"
+  "notif_token_keep_hint": "留空表示沿用现有 token",
+  "account_summary": "账号",
+  "users_section": "用户",
+  "range_24h": "24h",
+  "range_7d": "7d",
+  "chart_cost": "费用($/小时)",
+  "chart_tokens": "Token/秒",
+  "user_period_cost": "本期费用",
+  "user_period_tokens": "本期 token",
+  "user_share": "占比",
+  "copy_install": "复制安装链接",
+  "copied": "已复制",
+  "delete_user": "删除用户",
+  "delete_user_confirm": "要删除这个用户的数据吗?如果他的 client 还在上报,下次上报就会再出现。要彻底停止请在那台机器卸载 client。",
+  "no_users": "暂无用户上报"
 }
