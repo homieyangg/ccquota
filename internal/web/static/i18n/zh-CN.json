@@ -97,5 +97,9 @@
   "copied": "已复制",
   "delete_user": "删除用户",
   "delete_user_confirm": "要删除这个用户的数据吗?如果他的 client 还在上报,下次上报就会再出现。要彻底停止请在那台机器卸载 client。",
-  "no_users": "暂无用户上报"
+  "no_users": "暂无用户上报",
+  "update_available": "有新版",
+  "update_now": "更新",
+  "updating": "更新中,页面稍后会自动刷新。",
+  "up_to_date": "已是最新"
 }

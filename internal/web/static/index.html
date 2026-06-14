@@ -41,6 +41,12 @@
       </div>
       <div class="header-right">
 
+        <!-- 有新版時顯示更新鈕 -->
+        <button class="update-pill" x-show="updateInfo.update_available && !updating" style="display:none"
+          @click="doUpdate()"
+          x-text="t('update_available') + ' ' + updateInfo.latest + ' · ' + t('update_now')"></button>
+        <span class="update-pill updating" x-show="updating" style="display:none" x-text="t('updating')"></span>
+
         <!-- 語言下拉選單 -->
         <div class="lang-dropdown" x-data
           @keydown.escape.window="langOpen = false"

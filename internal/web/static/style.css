@@ -124,6 +124,14 @@ header h1 {
 
 /* ── refresh info ────────────────────────────────────────────────────────── */
 
+.update-pill {
+  background: var(--green); border: 1px solid var(--green); color: #fff;
+  padding: 5px 11px; border-radius: 999px; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 600;
+}
+.update-pill:hover { opacity: 0.9; }
+.update-pill.updating { background: var(--surface-2); border-color: var(--border); color: var(--ink-2); cursor: default; }
+
 .refresh-info {
   display: inline-flex; align-items: center; gap: 5px;
   color: var(--ink-3); font-size: 12px;

@@ -22,6 +22,7 @@ import (
 	"github.com/ccquota/ccquota/internal/oauth"
 	"github.com/ccquota/ccquota/internal/secret"
 	"github.com/ccquota/ccquota/internal/store"
+	"github.com/ccquota/ccquota/internal/update"
 )
 
 const (
@@ -145,15 +146,20 @@ type handler struct {
 	ingestToken string
 	publicURL   string
 	cipher      *secret.Cipher
+	version     string
 	mu          sync.Mutex
 	pending     map[string]pendingLogin
+
+	updMu  sync.Mutex
+	updRel update.Release
+	updAt  time.Time
 }
 
 // New returns an http.Handler with all API routes mounted.
 // staleSec 為帳號資料視為過時的秒數閾值（對應 CCQUOTA_POLLER_STALE_SEC）。
 // ingestToken 為 /v1/metrics 的 Bearer token（空字串 = 關閉 enroll 功能）。
 // publicURL 為對外 URL（空字串時從 request 自動推導）。
-func New(s *store.Store, oc *oauth.Client, staleSec int64, ingestToken, publicURL string, cipher *secret.Cipher) http.Handler {
+func New(s *store.Store, oc *oauth.Client, staleSec int64, ingestToken, publicURL string, cipher *secret.Cipher, version string) http.Handler {
 	// 啟動時 bootstrap 密碼 hash（若尚未存過）
 	if err := bootstrapPassword(s); err != nil {
 		// 非致命，但要 log
@@ -167,6 +173,7 @@ func New(s *store.Store, oc *oauth.Client, staleSec int64, ingestToken, publicUR
 		ingestToken: ingestToken,
 		publicURL:   strings.TrimRight(publicURL, "/"),
 		cipher:      cipher,
+		version:     version,
 		pending:     make(map[string]pendingLogin),
 	}
 	mux := http.NewServeMux()
@@ -184,6 +191,8 @@ func New(s *store.Store, oc *oauth.Client, staleSec int64, ingestToken, publicUR
 	mux.Handle("/api/login/complete", adminAuth(s, http.HandlerFunc(h.handleLoginComplete)))
 	mux.Handle("/api/enroll", adminAuth(s, http.HandlerFunc(h.handleEnroll)))
 	mux.Handle("/api/auth/change-password", adminAuth(s, http.HandlerFunc(h.handleChangePassword)))
+	mux.Handle("/api/version", adminAuth(s, http.HandlerFunc(h.handleVersion)))
+	mux.Handle("/api/update", adminAuth(s, http.HandlerFunc(h.handleUpdate)))
 	// /e/<token>: enrollment script，不需要 admin auth
 	mux.HandleFunc("/e/", h.handleEnrollScript)
 	// 通知設定端點

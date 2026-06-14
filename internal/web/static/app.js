@@ -255,6 +255,10 @@ document.addEventListener('alpine:init', () => {
     notifMsg: '',
     notifMsgType: '',
 
+    // self-update
+    updateInfo: { current: '', latest: '', update_available: false, notes_url: '' },
+    updating: false,
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     t(key) {
@@ -320,6 +324,26 @@ document.addEventListener('alpine:init', () => {
         this.authed = false;
         this.mustChange = false;
       }
+    },
+
+    // ── self-update ────────────────────────────────────────────────────────────
+
+    async checkVersion(force) {
+      try {
+        this.updateInfo = await apiGet('/api/version' + (force ? '?check=1' : ''));
+      } catch (e) { /* 查不到版本不影響使用 */ }
+    },
+
+    async doUpdate() {
+      if (!confirm(this.t('update_now') + ' ' + (this.updateInfo.latest || '') + ' ?')) return;
+      this.updating = true;
+      try {
+        await apiPost('/api/update', {});
+      } catch (e) {
+        // 連線可能在 server re-exec 時中斷,屬正常,照樣等它重啟
+      }
+      // 等 server 換 binary + 重啟,再重新整理
+      setTimeout(() => location.reload(), 5000);
     },
 
     async doLogin() {
@@ -728,6 +752,7 @@ document.addEventListener('alpine:init', () => {
           });
         } else {
           await this.refreshAccounts();
+          this.checkVersion(false);
         }
       }
 

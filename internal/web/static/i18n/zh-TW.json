@@ -97,5 +97,9 @@
   "copied": "已複製",
   "delete_user": "刪除使用者",
   "delete_user_confirm": "要刪除這個使用者的資料嗎?如果他的 client 還在上報,下次上報就會再出現。要徹底停止請在那台機器移除 client。",
-  "no_users": "尚無使用者上報"
+  "no_users": "尚無使用者上報",
+  "update_available": "有新版",
+  "update_now": "更新",
+  "updating": "更新中,頁面稍後會自動重整。",
+  "up_to_date": "已是最新"
 }

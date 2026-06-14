@@ -36,7 +36,7 @@ jobs:
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}
         run: |
-          go build -ldflags "-s -w" \
+          go build -ldflags "-s -w -X main.version=${{ github.ref_name }}" \
             -o dist/ccquota-${{ matrix.os }}-${{ matrix.arch }} \
             ./cmd/ccquota
 

@@ -25,14 +25,23 @@ import (
 	"github.com/ccquota/ccquota/internal/web"
 )
 
+// version 由 release build 以 -ldflags "-X main.version=<tag>" 注入;本地 dev build 為 "dev"。
+var version = "dev"
+
 func main() {
+	if len(os.Args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: ccquota <login|set-token|serve|poll|version>")
+		os.Exit(2)
+	}
+	// version 不需要開 DB
+	if os.Args[1] == "version" {
+		fmt.Println(version)
+		return
+	}
+
 	dbPath := os.Getenv("CCQUOTA_DB")
 	if dbPath == "" {
 		dbPath = "ccquota.db"
-	}
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: ccquota <login|set-token|serve|poll>")
-		os.Exit(2)
 	}
 	s, err := store.Open(dbPath)
 	if err != nil {
@@ -390,6 +399,7 @@ func runServe(s *store.Store) {
 		os.Getenv("CCQUOTA_INGEST_TOKEN"),
 		os.Getenv("CCQUOTA_PUBLIC_URL"),
 		cipher,
+		version,
 	)
 	mux.Handle("/api/", apiHandler)
 	mux.Handle("/e/", apiHandler)

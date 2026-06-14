@@ -97,5 +97,9 @@
   "copied": "Copied",
   "delete_user": "Delete user",
   "delete_user_confirm": "Delete this user's data? If their client is still reporting, they will reappear on the next report. Uninstall the client to stop it.",
-  "no_users": "No users reporting yet"
+  "no_users": "No users reporting yet",
+  "update_available": "Update available",
+  "update_now": "Update",
+  "updating": "Updating, the page will reload shortly.",
+  "up_to_date": "Up to date"
 }

@@ -47,7 +47,7 @@ func authedGet(t *testing.T, handler http.Handler, path string) *http.Response {
 
 func TestAccountsEmpty(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 	resp := authedGet(t, h, "/api/accounts")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("want 200, got %d", resp.StatusCode)
@@ -58,7 +58,7 @@ func TestAccountsWithReading(t *testing.T) {
 	s := testStore(t)
 	_ = s.UpsertAccount(store.Account{ID: "main", Label: "Main", AccessToken: "a", RefreshToken: "r", ExpiresAt: 9999})
 	_ = s.InsertReading(store.Reading{AccountID: "main", TS: time.Now().Unix(), SevenDay: 42, FiveHour: 10})
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 	resp := authedGet(t, h, "/api/accounts")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("want 200, got %d", resp.StatusCode)
@@ -101,7 +101,7 @@ func TestAccountsCostCalc(t *testing.T) {
 	_ = s.InsertUserCost("acct1", "alice", sinceTS+10, 30.0, 1000)
 	_ = s.InsertUserCost("acct1", "bob", sinceTS+20, 20.0, 500)
 
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 	resp := authedGet(t, h, "/api/accounts")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("want 200, got %d", resp.StatusCode)
@@ -152,7 +152,7 @@ func TestAccountsCostCalc(t *testing.T) {
 
 func TestAuthRejectsNoCredentials(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 	req := httptest.NewRequest(http.MethodGet, "/api/accounts", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -163,7 +163,7 @@ func TestAuthRejectsNoCredentials(t *testing.T) {
 
 func TestAuthRejectsWrongPassword(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 	req := httptest.NewRequest(http.MethodGet, "/api/accounts", nil)
 	req.SetBasicAuth("admin", "wrongpassword")
 	w := httptest.NewRecorder()
@@ -175,7 +175,7 @@ func TestAuthRejectsWrongPassword(t *testing.T) {
 
 func TestHealthz(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -201,7 +201,7 @@ func TestLoginStartComplete(t *testing.T) {
 
 	s := testStore(t)
 	oc := &oauth.Client{HTTP: tokenSrv.Client(), TokenURL: tokenSrv.URL}
-	h := New(s, oc, 1800, "", "", testCipher(t))
+	h := New(s, oc, 1800, "", "", testCipher(t), "dev")
 
 	// Start login
 	startBody, _ := json.Marshal(map[string]string{"label": "test"})
@@ -270,7 +270,7 @@ func TestLoginStartComplete(t *testing.T) {
 
 func TestEnrollNoAdmin(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "itok", "https://demo.example", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "itok", "https://demo.example", testCipher(t), "dev")
 	req := httptest.NewRequest(http.MethodPost, "/api/enroll",
 		strings.NewReader(`{"account":"main","user":"alice"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -283,7 +283,7 @@ func TestEnrollNoAdmin(t *testing.T) {
 
 func TestEnrollSuccess(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "itok", "https://demo.example", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "itok", "https://demo.example", testCipher(t), "dev")
 	body, _ := json.Marshal(map[string]string{"account": "main", "user": "alice"})
 	req := httptest.NewRequest(http.MethodPost, "/api/enroll", bytes.NewReader(body))
 	req.SetBasicAuth("admin", AdminPassword)
@@ -303,7 +303,7 @@ func TestEnrollSuccess(t *testing.T) {
 
 func TestEnrollNoIngestToken(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "", "https://demo.example", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "https://demo.example", testCipher(t), "dev")
 	body, _ := json.Marshal(map[string]string{"account": "main", "user": "alice"})
 	req := httptest.NewRequest(http.MethodPost, "/api/enroll", bytes.NewReader(body))
 	req.SetBasicAuth("admin", AdminPassword)
@@ -317,7 +317,7 @@ func TestEnrollNoIngestToken(t *testing.T) {
 
 func TestEnrollScriptValid(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "itok", "https://demo.example", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "itok", "https://demo.example", testCipher(t), "dev")
 
 	// 先建立 enrollment
 	body, _ := json.Marshal(map[string]string{"account": "main", "user": "alice"})
@@ -363,7 +363,7 @@ func TestEnrollScriptValid(t *testing.T) {
 
 func TestEnrollScriptBadToken(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "itok", "https://demo.example", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "itok", "https://demo.example", testCipher(t), "dev")
 	req := httptest.NewRequest(http.MethodGet, "/e/badtoken", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -394,7 +394,7 @@ func loginAndGetCookie(t *testing.T, h http.Handler, password string) (*http.Coo
 // TestAuthStatusOpen 確認 /api/auth/status 在無認證時仍回傳 200 (authed:false)。
 func TestAuthStatusOpen(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -411,7 +411,7 @@ func TestAuthStatusOpen(t *testing.T) {
 // TestAuthStatusWithBasicAuth 確認 Basic Auth 也讓 status 回傳 authed:true。
 func TestAuthStatusWithBasicAuth(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
 	req.SetBasicAuth("admin", AdminPassword)
 	w := httptest.NewRecorder()
@@ -429,7 +429,7 @@ func TestAuthStatusWithBasicAuth(t *testing.T) {
 // TestLoginSetsSessionCookie 確認正確密碼登入後會拿到 session cookie。
 func TestLoginSetsSessionCookie(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 	cookie, code := loginAndGetCookie(t, h, AdminPassword)
 	if code != http.StatusOK {
 		t.Fatalf("want 200, got %d", code)
@@ -445,7 +445,7 @@ func TestLoginSetsSessionCookie(t *testing.T) {
 // TestCookieGrantsAccess 確認帶著合法 session cookie 可通過認證 gate。
 func TestCookieGrantsAccess(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 
 	// 先登入拿 cookie
 	cookie, code := loginAndGetCookie(t, h, AdminPassword)
@@ -466,7 +466,7 @@ func TestCookieGrantsAccess(t *testing.T) {
 // TestWrongPasswordReturns401 確認密碼錯誤回傳 401。
 func TestWrongPasswordReturns401(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 	_, code := loginAndGetCookie(t, h, "wrongpassword")
 	if code != http.StatusUnauthorized {
 		t.Fatalf("want 401, got %d", code)
@@ -476,7 +476,7 @@ func TestWrongPasswordReturns401(t *testing.T) {
 // TestBasicAuthStillWorks 確認 Basic Auth 仍可通過認證 gate（向後相容）。
 func TestBasicAuthStillWorks(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 	req := httptest.NewRequest(http.MethodGet, "/api/accounts", nil)
 	req.SetBasicAuth("admin", AdminPassword)
 	w := httptest.NewRecorder()
@@ -491,7 +491,7 @@ func TestAuthStatusMustChange(t *testing.T) {
 	s := testStore(t)
 	// bootstrap 設 must_change=1（auto-gen 情境：不設 CCQUOTA_ADMIN_PASSWORD）
 	os.Unsetenv("CCQUOTA_ADMIN_PASSWORD")
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 
 	// 未認證時 must_change 不應為 true
 	req := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
@@ -526,7 +526,7 @@ func TestAuthStatusMustChange(t *testing.T) {
 func TestChangePasswordHappy(t *testing.T) {
 	s := testStore(t)
 	os.Unsetenv("CCQUOTA_ADMIN_PASSWORD")
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 
 	// 登入
 	cookie, code := loginAndGetCookie(t, h, AdminPassword)
@@ -572,7 +572,7 @@ func TestChangePasswordHappy(t *testing.T) {
 // TestChangePasswordWrongCurrent 確認現有密碼錯誤回 401。
 func TestChangePasswordWrongCurrent(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 	cookie, _ := loginAndGetCookie(t, h, AdminPassword)
 
 	body, _ := json.Marshal(map[string]string{"current": "wrongpass", "new": "newpass123"})
@@ -589,7 +589,7 @@ func TestChangePasswordWrongCurrent(t *testing.T) {
 // TestChangePasswordWeakNew 確認新密碼太短回 400。
 func TestChangePasswordWeakNew(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 	cookie, _ := loginAndGetCookie(t, h, AdminPassword)
 
 	body, _ := json.Marshal(map[string]string{"current": AdminPassword, "new": "short"})
@@ -606,7 +606,7 @@ func TestChangePasswordWeakNew(t *testing.T) {
 // TestLogoutClearsSession 確認登出後 session cookie 失效。
 func TestLogoutClearsSession(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 
 	// 先登入
 	cookie, code := loginAndGetCookie(t, h, AdminPassword)
@@ -639,7 +639,7 @@ func TestLogoutClearsSession(t *testing.T) {
 func TestNotificationsChannelFlow(t *testing.T) {
 	s := testStore(t)
 	cipher := testCipher(t)
-	h := New(s, &oauth.Client{}, 1800, "", "", cipher)
+	h := New(s, &oauth.Client{}, 1800, "", "", cipher, "dev")
 
 	// POST /api/notifications/channels 建立 telegram 頻道
 	body, _ := json.Marshal(map[string]any{
@@ -718,7 +718,7 @@ func postChannel(t *testing.T, h http.Handler, payload map[string]any) (int64, i
 func TestNotificationsPutPreservesSecret(t *testing.T) {
 	s := testStore(t)
 	cipher := testCipher(t)
-	h := New(s, &oauth.Client{}, 1800, "", "", cipher)
+	h := New(s, &oauth.Client{}, 1800, "", "", cipher, "dev")
 
 	id, code := postChannel(t, h, map[string]any{
 		"type":    "telegram",
@@ -776,7 +776,7 @@ func TestNotificationsPutPreservesSecret(t *testing.T) {
 // TestNotificationsUnknownType 驗證未知頻道型別回 400。
 func TestNotificationsUnknownType(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 	_, code := postChannel(t, h, map[string]any{
 		"type":    "carrierpigeon",
 		"enabled": true,
@@ -794,7 +794,7 @@ func TestUserSeriesEndpoint(t *testing.T) {
 	_ = s.InsertUserCost("main", "gary", now-3600, 1.5, 500)
 	_ = s.InsertUserCost("main", "gary", now-1800, 2.5, 800)
 
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 	resp := authedGet(t, h, "/api/user-series?account=main&user=gary&range=7d")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("want 200, got %d", resp.StatusCode)
@@ -817,7 +817,7 @@ func TestDeleteUserEndpoint(t *testing.T) {
 	now := time.Now().Unix()
 	_ = s.InsertUserCost("main", "gary", now-100, 1.0, 100)
 
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/users?account=main&user=gary", nil)
 	req.SetBasicAuth("admin", AdminPassword)
@@ -839,7 +839,7 @@ func TestDeleteUserEndpoint(t *testing.T) {
 // TestNotificationsThresholdsRoundTrip 驗證 PUT 門檻後 GET 取回新值。
 func TestNotificationsThresholdsRoundTrip(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t))
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
 
 	body, _ := json.Marshal(map[string]any{
 		"SevenDayWarn": 80, "SevenDayCrit": 92, "FiveHourCrit": 97, "ResetNotify": false,
