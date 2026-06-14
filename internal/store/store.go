@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 
 	_ "modernc.org/sqlite"
@@ -88,6 +89,13 @@ CREATE TABLE IF NOT EXISTS enrollments (
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS channels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type TEXT NOT NULL,
+  config TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
 );
 `)
 	return err
@@ -301,4 +309,138 @@ func (s *Store) MarkAlertFired(account, kind, windowKey string, ts int64) error 
 		account, kind, windowKey, ts,
 	)
 	return err
+}
+
+// Channel 是一個通知頻道設定。Config 是 JSON，secret 欄位已加密。
+type Channel struct {
+	ID        int64
+	Type      string
+	Config    string
+	Enabled   bool
+	CreatedAt int64
+}
+
+// CreateChannel 新增頻道，回傳新 id。
+func (s *Store) CreateChannel(ch Channel) (int64, error) {
+	res, err := s.db.Exec(
+		`INSERT INTO channels (type, config, enabled) VALUES (?, ?, ?)`,
+		ch.Type, ch.Config, boolToInt(ch.Enabled),
+	)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// UpdateChannel 依 id 更新頻道。
+func (s *Store) UpdateChannel(ch Channel) error {
+	_, err := s.db.Exec(
+		`UPDATE channels SET type=?, config=?, enabled=? WHERE id=?`,
+		ch.Type, ch.Config, boolToInt(ch.Enabled), ch.ID,
+	)
+	return err
+}
+
+// ListChannels 回傳所有頻道（依 id）。
+func (s *Store) ListChannels() ([]Channel, error) {
+	rows, err := s.db.Query(`SELECT id, type, config, enabled, created_at FROM channels ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Channel
+	for rows.Next() {
+		var c Channel
+		var en int
+		if err := rows.Scan(&c.ID, &c.Type, &c.Config, &en, &c.CreatedAt); err != nil {
+			return nil, err
+		}
+		c.Enabled = en != 0
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// GetChannel 依 id 取單一頻道；ok=false 表示不存在。
+func (s *Store) GetChannel(id int64) (Channel, bool, error) {
+	var c Channel
+	var en int
+	err := s.db.QueryRow(`SELECT id, type, config, enabled, created_at FROM channels WHERE id=?`, id).
+		Scan(&c.ID, &c.Type, &c.Config, &en, &c.CreatedAt)
+	if err == sql.ErrNoRows {
+		return Channel{}, false, nil
+	}
+	if err != nil {
+		return Channel{}, false, err
+	}
+	c.Enabled = en != 0
+	return c, true, nil
+}
+
+// DeleteChannel 依 id 刪除頻道。
+func (s *Store) DeleteChannel(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM channels WHERE id=?`, id)
+	return err
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// AlertThresholds 是告警門檻設定。
+type AlertThresholds struct {
+	SevenDayWarn float64
+	SevenDayCrit float64
+	FiveHourCrit float64
+	ResetNotify  bool
+}
+
+// GetAlertThresholds 從 settings 讀門檻；未設定時回預設（75/90/95/on）。
+func (s *Store) GetAlertThresholds() (AlertThresholds, error) {
+	t := AlertThresholds{SevenDayWarn: 75, SevenDayCrit: 90, FiveHourCrit: 95, ResetNotify: true}
+	if v, ok, err := s.GetSetting("alert_seven_day_warn"); err != nil {
+		return t, err
+	} else if ok {
+		fmt.Sscanf(v, "%g", &t.SevenDayWarn)
+	}
+	if v, ok, err := s.GetSetting("alert_seven_day_crit"); err != nil {
+		return t, err
+	} else if ok {
+		fmt.Sscanf(v, "%g", &t.SevenDayCrit)
+	}
+	if v, ok, err := s.GetSetting("alert_five_hour_crit"); err != nil {
+		return t, err
+	} else if ok {
+		fmt.Sscanf(v, "%g", &t.FiveHourCrit)
+	}
+	if v, ok, err := s.GetSetting("alert_reset_notify"); err != nil {
+		return t, err
+	} else if ok {
+		t.ResetNotify = v == "1"
+	}
+	return t, nil
+}
+
+// SetAlertThresholds 把門檻寫進 settings。
+func (s *Store) SetAlertThresholds(t AlertThresholds) error {
+	if err := s.SetSetting("alert_seven_day_warn", fmt.Sprintf("%g", t.SevenDayWarn)); err != nil {
+		return err
+	}
+	if err := s.SetSetting("alert_seven_day_crit", fmt.Sprintf("%g", t.SevenDayCrit)); err != nil {
+		return err
+	}
+	if err := s.SetSetting("alert_five_hour_crit", fmt.Sprintf("%g", t.FiveHourCrit)); err != nil {
+		return err
+	}
+	return s.SetSetting("alert_reset_notify", boolToSetting(t.ResetNotify))
+}
+
+func boolToSetting(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
 }
