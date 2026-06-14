@@ -18,7 +18,8 @@ function detectLang() {
 
 async function loadLang(lang) {
   if (i18nCache[lang]) return i18nCache[lang];
-  const res = await fetch(`/i18n/${lang}.json`);
+  const v = window.__ASSET_V ? `?v=${window.__ASSET_V}` : '';
+  const res = await fetch(`/i18n/${lang}.json${v}`);
   if (!res.ok) throw new Error(`i18n load failed: ${res.status}`);
   const data = await res.json();
   i18nCache[lang] = data;
