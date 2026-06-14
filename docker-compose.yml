@@ -1,0 +1,34 @@
+version: "3.9"
+
+services:
+  ccquota:
+    build: .
+    # Or use a pre-built image:
+    # image: ghcr.io/OWNER/ccquota:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ccquota_data:/data
+    environment:
+      CCQUOTA_DB: /data/ccquota.db
+      # Required: MUST change — admin password for web UI / API
+      CCQUOTA_ADMIN_PASSWORD: changeme
+      # Required: MUST change — token for cost ingest (POST /v1/metrics)
+      CCQUOTA_INGEST_TOKEN: changeme-ingest-token
+      # Optional: Telegram alerts
+      # CCQUOTA_TELEGRAM_TOKEN: "123456:AABBCCDDabcdef"
+      # CCQUOTA_TELEGRAM_CHAT: "-1001234567890"
+      # Optional: generic webhook alerts
+      # CCQUOTA_WEBHOOK_URL: "https://hooks.example.com/ccquota"
+      # Optional: alert language (en / zh-TW / zh-CN, default: en)
+      # CCQUOTA_ALERT_LANG: en
+      # Optional: thresholds (%, default: 75 / 90 / 95)
+      # CCQUOTA_WEEKLY_WARN: "75"
+      # CCQUOTA_WEEKLY_CRIT: "90"
+      # CCQUOTA_FIVEHOUR_CRIT: "95"
+      # Optional: seconds before a poller is considered stale (default: 1800)
+      # CCQUOTA_POLLER_STALE_SEC: "1800"
+    restart: unless-stopped
+
+volumes:
+  ccquota_data:

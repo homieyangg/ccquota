@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<!-- Alpine.js vendored: v3.15.12 (cdn.jsdelivr.net/npm/alpinejs@3/dist/cdn.min.js) -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ccquota Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+  <script defer src="app.js"></script>
+  <script defer src="alpine.min.js"></script>
+</head>
+<body x-data="dashboard" x-init="init()">
+
+  <header>
+    <h1 x-text="t('heading')">ccquota Dashboard</h1>
+    <div class="header-right">
+      <div class="lang-switcher">
+        <span x-text="t('lang_label')">Language</span>
+        <button
+          :class="{ active: lang === 'en' }"
+          @click="setLang('en')">EN</button>
+        <button
+          :class="{ active: lang === 'zh-TW' }"
+          @click="setLang('zh-TW')">繁中</button>
+        <button
+          :class="{ active: lang === 'zh-CN' }"
+          @click="setLang('zh-CN')">简中</button>
+      </div>
+      <div class="refresh-info">
+        <span x-text="t('auto_refresh')"></span>
+        <span x-show="lastUpdated" x-text="lastUpdated"></span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- Accounts section -->
+    <section id="accounts-section">
+      <h2 x-text="t('accounts_section')">Accounts</h2>
+
+      <div id="accounts-grid">
+
+        <!-- No accounts -->
+        <template x-if="accounts.length === 0">
+          <p class="no-reading" x-text="t('no_accounts')"></p>
+        </template>
+
+        <!-- Account cards -->
+        <template x-for="acct in accounts" :key="acct.id">
+          <div class="account-card" :class="{ stale: acct.stale }">
+
+            <div class="card-header">
+              <div>
+                <h3 x-text="acct.label"></h3>
+                <div class="card-id" x-text="acct.id"></div>
+              </div>
+              <span class="stale-badge" x-show="acct.stale" x-text="t('stale_warning')"></span>
+            </div>
+
+            <!-- No reading yet -->
+            <template x-if="!acct.has_reading">
+              <div class="no-reading" x-text="t('no_reading')"></div>
+            </template>
+
+            <!-- Has reading -->
+            <template x-if="acct.has_reading">
+              <div>
+                <div class="gauges">
+                  <!-- 7-day bar -->
+                  <div class="gauge-row">
+                    <div class="gauge-label">
+                      <span x-text="t('seven_day_label')"></span>
+                      <span class="gauge-pct" x-text="fmtPct(acct.seven_day)"></span>
+                    </div>
+                    <div class="gauge-bar-bg">
+                      <div class="gauge-bar-fill"
+                        :class="fillClass(acct.seven_day || 0)"
+                        :style="'width:' + clampPct(acct.seven_day) + '%'">
+                      </div>
+                    </div>
+                  </div>
+                  <!-- 5-hour bar -->
+                  <div class="gauge-row">
+                    <div class="gauge-label">
+                      <span x-text="t('five_hour_label')"></span>
+                      <span class="gauge-pct" x-text="fmtPct(acct.five_hour)"></span>
+                    </div>
+                    <div class="gauge-bar-bg">
+                      <div class="gauge-bar-fill"
+                        :class="fillClass(acct.five_hour || 0)"
+                        :style="'width:' + clampPct(acct.five_hour) + '%'">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="model-usage">
+                  <span><span x-text="t('sonnet_label')"></span>: <strong x-text="fmtPct(acct.sonnet)"></strong></span>
+                  <span><span x-text="t('opus_label')"></span>: <strong x-text="fmtPct(acct.opus)"></strong></span>
+                </div>
+
+                <div class="reset-countdown">
+                  <span x-text="t('resets_in')"></span>: <span x-text="countdown(acct.seven_day_resets_at)"></span>
+                </div>
+
+                <div class="sparkline-wrap">
+                  <div class="sparkline-label" x-text="t('history_label')"></div>
+                  <canvas :id="'spark-' + acct.id" height="40"
+                    x-effect="$nextTick(() => _drawSparkline(acct.id))">
+                  </canvas>
+                </div>
+
+                <!-- Cost breakdown section -->
+                <div class="cost-section">
+                  <div class="cost-section-title" x-text="t('cost_section')"></div>
+                  <div class="cost-row">
+                    <span x-text="t('period_cost')"></span>:
+                    <strong x-text="'$' + (acct.cost.period_cost_usd || 0).toFixed(2)"></strong>
+                  </div>
+                  <div class="cost-row">
+                    <span x-text="t('weekly_budget')"></span>:
+                    <strong x-text="acct.cost.weekly_budget_usd > 0 ? '$' + acct.cost.weekly_budget_usd.toFixed(2) : '—'"></strong>
+                  </div>
+                  <div class="cost-row">
+                    <span x-text="t('per_user_budget')"></span>:
+                    <strong x-text="acct.cost.per_user_budget_usd > 0 ? '$' + acct.cost.per_user_budget_usd.toFixed(2) : '—'"></strong>
+                  </div>
+                  <div class="cost-note" x-text="t('reverse_calc_note')"></div>
+
+                  <!-- Per-user list -->
+                  <template x-if="acct.cost.users && acct.cost.users.length > 0">
+                    <div class="user-cost-list">
+                      <template x-for="u in acct.cost.users" :key="u.user">
+                        <div class="user-cost-row">
+                          <div class="user-cost-name" x-text="u.user"></div>
+                          <div class="user-cost-bar-wrap">
+                            <div class="user-cost-bar-bg">
+                              <div class="user-cost-bar-fill"
+                                :class="fillClass(u.share_pct)"
+                                :style="'width:' + Math.min(u.share_pct, 100) + '%'">
+                              </div>
+                            </div>
+                            <div class="user-cost-meta">
+                              <span x-text="'$' + u.cost_usd.toFixed(2)"></span>
+                              <span x-text="' / $' + (acct.cost.per_user_budget_usd || 0).toFixed(2)"></span>
+                              <span class="user-share-pct" x-text="'(' + u.share_pct.toFixed(1) + '% ' + t('share_used') + ')'"></span>
+                            </div>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+                  </template>
+                </div>
+
+              </div>
+            </template>
+
+          </div>
+        </template>
+
+      </div>
+    </section>
+
+    <!-- Connect Account section -->
+    <section id="connect-section">
+      <h2 x-text="t('connect_section')">Connect Account</h2>
+      <div class="connect-form">
+
+        <div class="form-row">
+          <label x-text="t('account_id_label')">Account ID:</label>
+          <input type="text" x-model="connectId" placeholder="main">
+        </div>
+        <div class="form-row">
+          <label x-text="t('account_label_label')">Label (optional):</label>
+          <input type="text" x-model="connectLabel" placeholder="My Account">
+        </div>
+
+        <button @click="startLogin()" :disabled="startBtnDisabled" x-text="t('connect_btn')">Start OAuth Flow</button>
+
+        <!-- OAuth flow (shown after startLogin) -->
+        <div id="oauth-flow" x-show="showOauthFlow" style="display:none">
+          <div class="form-row">
+            <label x-text="t('authorize_url_label')">Authorize URL:</label>
+            <div class="url-row">
+              <input type="text" :value="authorizeUrl" readonly>
+              <button @click="openUrl()" x-text="t('open_url_btn')">Open</button>
+            </div>
+          </div>
+          <div class="form-row">
+            <label x-text="t('code_label')">Paste OAuth Code:</label>
+            <input type="text" x-model="oauthCode" placeholder="code#state">
+          </div>
+          <button @click="completeLogin()" x-text="t('complete_btn')">Complete Login</button>
+        </div>
+
+        <!-- Status message -->
+        <div id="connect-msg"
+          x-show="connectMsg"
+          x-text="connectMsg"
+          :class="connectMsgType"
+          style="display:none">
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+</body>
+</html>

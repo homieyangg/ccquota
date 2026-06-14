@@ -1,0 +1,22 @@
+# Go
+/ccquota
+/bin/
+*.exe
+*.test
+*.out
+
+# data / secrets
+/data/
+*.db
+*.db-*
+*.sqlite
+.env
+*.local
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# 設計文件不納入版控
+/docs/

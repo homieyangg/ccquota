@@ -1,0 +1,16 @@
+.git
+docs
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+.env
+*.local
+ccquota
+bin/
+data/
+.DS_Store
+.idea/
+.vscode/
+*.test
+*.out
