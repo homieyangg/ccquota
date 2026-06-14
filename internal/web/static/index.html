@@ -379,73 +379,108 @@
 
           <!-- ── Notifications tab ─────────────────────────────────────────── -->
           <div x-show="settingsTab==='notifications'" style="display:none">
-            <h3 x-text="t('notif_channels')" style="font-size:13px;font-weight:600;color:var(--ink-2);margin-bottom:12px;"></h3>
-            <p class="no-reading" x-show="channels.length===0" x-text="t('notif_no_channels')" style="display:none;text-align:left;padding:8px 0;"></p>
-            <template x-for="ch in channels" :key="ch.id">
-              <div class="channel-row">
-                <div class="channel-head">
-                  <strong x-text="ch.type"></strong>
-                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" x-model="ch.enabled"> <span x-text="t('notif_enabled')"></span></label>
+
+            <!-- 頻道 -->
+            <section class="settings-section">
+              <h3 class="settings-section-title" x-text="t('notif_channels')"></h3>
+              <p class="settings-empty" x-show="channels.length===0" x-text="t('notif_no_channels')" style="display:none"></p>
+
+              <template x-for="ch in channels" :key="ch.id">
+                <div class="channel-card">
+                  <div class="channel-card-head">
+                    <span class="channel-type" x-text="ch.type"></span>
+                    <label class="switch">
+                      <input type="checkbox" x-model="ch.enabled">
+                      <span class="switch-track"><span class="switch-thumb"></span></span>
+                      <span class="switch-label" x-text="t('notif_enabled')"></span>
+                    </label>
+                  </div>
+                  <template x-if="ch.type==='telegram'">
+                    <div class="field-stack">
+                      <div class="form-row">
+                        <label x-text="t('notif_bot_token')"></label>
+                        <input type="password" :placeholder="t('notif_token_keep_hint')" x-model="ch.config.bot_token" autocomplete="off">
+                      </div>
+                      <div class="form-row">
+                        <label x-text="t('notif_chat_id')"></label>
+                        <input type="text" x-model="ch.config.chat_id">
+                      </div>
+                    </div>
+                  </template>
+                  <template x-if="ch.type==='webhook'">
+                    <div class="form-row">
+                      <label x-text="t('notif_webhook_url')"></label>
+                      <input type="text" x-model="ch.config.url">
+                    </div>
+                  </template>
+                  <div class="channel-actions">
+                    <button type="button" class="btn-secondary" @click="saveChannel(ch)" x-text="t('notif_save')"></button>
+                    <button type="button" class="btn-secondary" @click="testChannel(ch)" x-text="t('notif_test')"></button>
+                    <button type="button" class="btn-secondary btn-danger" @click="deleteChannel(ch)" x-text="t('notif_delete')"></button>
+                  </div>
                 </div>
-                <template x-if="ch.type==='telegram'">
-                  <div class="form-row" style="margin-bottom:0;gap:8px;">
-                    <input type="password" :placeholder="t('notif_bot_token')" x-model="ch.config.bot_token" autocomplete="off">
-                    <small style="font-size:11px;color:var(--ink-3);" x-text="t('notif_token_keep_hint')"></small>
-                    <input type="text" :placeholder="t('notif_chat_id')" x-model="ch.config.chat_id">
+              </template>
+
+              <!-- 新增頻道 -->
+              <div class="add-channel">
+                <div class="add-channel-title" x-text="t('notif_add_channel')"></div>
+                <div class="form-row">
+                  <label x-text="t('notif_type')"></label>
+                  <select x-model="newChannel.type">
+                    <option value="telegram">Telegram</option>
+                    <option value="webhook">Webhook</option>
+                  </select>
+                </div>
+                <template x-if="newChannel.type==='telegram'">
+                  <div class="field-stack">
+                    <div class="form-row">
+                      <label x-text="t('notif_bot_token')"></label>
+                      <input type="password" x-model="newChannel.config.bot_token" autocomplete="off">
+                    </div>
+                    <div class="form-row">
+                      <label x-text="t('notif_chat_id')"></label>
+                      <input type="text" x-model="newChannel.config.chat_id">
+                    </div>
                   </div>
                 </template>
-                <template x-if="ch.type==='webhook'">
-                  <div class="form-row" style="margin-bottom:0;">
-                    <input type="text" :placeholder="t('notif_webhook_url')" x-model="ch.config.url">
+                <template x-if="newChannel.type==='webhook'">
+                  <div class="form-row">
+                    <label x-text="t('notif_webhook_url')"></label>
+                    <input type="text" x-model="newChannel.config.url">
                   </div>
                 </template>
-                <div class="channel-actions">
-                  <button type="button" @click="saveChannel(ch)" x-text="t('notif_save')"></button>
-                  <button type="button" @click="testChannel(ch)" x-text="t('notif_test')"></button>
-                  <button type="button" @click="deleteChannel(ch)" x-text="t('notif_delete')"></button>
+                <button type="button" @click="addChannel()" x-text="t('notif_add_channel')"></button>
+              </div>
+            </section>
+
+            <!-- 告警門檻 -->
+            <section class="settings-section">
+              <h3 class="settings-section-title" x-text="t('notif_thresholds')"></h3>
+              <div class="threshold-grid">
+                <div class="form-row">
+                  <label x-text="t('notif_seven_day_warn')"></label>
+                  <input type="number" x-model.number="thresholds.SevenDayWarn">
+                </div>
+                <div class="form-row">
+                  <label x-text="t('notif_seven_day_crit')"></label>
+                  <input type="number" x-model.number="thresholds.SevenDayCrit">
+                </div>
+                <div class="form-row">
+                  <label x-text="t('notif_five_hour_crit')"></label>
+                  <input type="number" x-model.number="thresholds.FiveHourCrit">
                 </div>
               </div>
-            </template>
-
-            <h4 x-text="t('notif_add_channel')" style="font-size:13px;font-weight:600;color:var(--ink-2);margin:16px 0 10px;"></h4>
-            <div class="form-row">
-              <select x-model="newChannel.type">
-                <option value="telegram">telegram</option>
-                <option value="webhook">webhook</option>
-              </select>
-            </div>
-            <template x-if="newChannel.type==='telegram'">
-              <div class="form-row">
-                <input type="password" :placeholder="t('notif_bot_token')" x-model="newChannel.config.bot_token" autocomplete="off">
-                <input type="text" :placeholder="t('notif_chat_id')" x-model="newChannel.config.chat_id">
+              <label class="switch switch-row">
+                <input type="checkbox" x-model="thresholds.ResetNotify">
+                <span class="switch-track"><span class="switch-thumb"></span></span>
+                <span class="switch-label" x-text="t('notif_reset_notify')"></span>
+              </label>
+              <div class="settings-actions">
+                <button type="button" @click="saveThresholds()" x-text="t('notif_save')"></button>
               </div>
-            </template>
-            <template x-if="newChannel.type==='webhook'">
-              <div class="form-row">
-                <input type="text" :placeholder="t('notif_webhook_url')" x-model="newChannel.config.url">
-              </div>
-            </template>
-            <button type="button" @click="addChannel()" x-text="t('notif_add_channel')" style="margin-bottom:20px;"></button>
+            </section>
 
-            <h3 x-text="t('notif_thresholds')" style="font-size:13px;font-weight:600;color:var(--ink-2);margin-bottom:12px;"></h3>
-            <div class="form-row">
-              <label x-text="t('notif_seven_day_warn')"></label>
-              <input type="number" x-model.number="thresholds.SevenDayWarn">
-            </div>
-            <div class="form-row">
-              <label x-text="t('notif_seven_day_crit')"></label>
-              <input type="number" x-model.number="thresholds.SevenDayCrit">
-            </div>
-            <div class="form-row">
-              <label x-text="t('notif_five_hour_crit')"></label>
-              <input type="number" x-model.number="thresholds.FiveHourCrit">
-            </div>
-            <div class="form-row">
-              <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" x-model="thresholds.ResetNotify"> <span x-text="t('notif_reset_notify')"></span></label>
-            </div>
-            <button type="button" @click="saveThresholds()" x-text="t('notif_save')"></button>
-
-            <div x-show="notifMsg" x-text="notifMsg" :class="notifMsgType" style="display:none;margin-top:12px;font-size:13px;"></div>
+            <div x-show="notifMsg" x-text="notifMsg" :class="notifMsgType" style="display:none;margin-top:4px;font-size:13px;"></div>
           </div>
 
         </div>

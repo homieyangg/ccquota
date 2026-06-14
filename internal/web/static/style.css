@@ -286,7 +286,7 @@ button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.1
 .form-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .form-row label { font-size: 12px; color: var(--ink-2); font-weight: 500; }
 
-.form-row input, .form-row select {
+.form-row input:not([type="checkbox"]), .form-row select {
   background: var(--surface); border: 1px solid var(--border-strong); color: var(--ink);
   padding: 9px 11px; border-radius: var(--radius-sm); font: inherit; font-size: 14px; width: 100%;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -383,29 +383,76 @@ button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.1
 .dialog-tabs button:hover { color: var(--ink-2); opacity: 1; }
 .dialog-tabs button.active { color: var(--ink); border-bottom-color: var(--accent); }
 
-/* ── notification channel rows ──────────────────────────────────────────── */
+/* ── settings: notifications ────────────────────────────────────────────── */
 
-.channel-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--border);
+.settings-section { margin-bottom: 28px; }
+.settings-section:last-child { margin-bottom: 0; }
+.settings-section-title {
+  font-size: 12px; font-weight: 600; color: var(--ink-3);
+  text-transform: uppercase; letter-spacing: .04em;
+  margin-bottom: 14px;
 }
-.channel-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.settings-empty { font-size: 13px; color: var(--ink-3); padding: 2px 0 14px; }
+.settings-actions { margin-top: 16px; }
+
+/* 既有頻道:bordered 子卡 */
+.channel-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  margin-bottom: 12px;
 }
+.channel-card-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px;
+}
+.channel-type {
+  font-size: 13px; font-weight: 600; color: var(--ink);
+  text-transform: capitalize;
+}
+.field-stack { display: flex; flex-direction: column; gap: 10px; }
+.channel-card .form-row, .add-channel .form-row { margin-bottom: 12px; }
+.channel-card .form-row:last-of-type { margin-bottom: 0; }
 .channel-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px;
 }
-.channel-actions button {
-  padding: 6px 12px;
-  font-size: 12px;
+
+/* 新增頻道:虛線 add 區 */
+.add-channel {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 14px;
 }
+.add-channel-title { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 12px; }
+.add-channel button { width: 100%; margin-top: 4px; }
+
+/* 門檻:三欄數字 + 重置通知 switch */
+.threshold-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.threshold-grid .form-row { margin-bottom: 0; }
+@media (max-width: 480px) { .threshold-grid { grid-template-columns: 1fr; } }
+
+/* toggle switch */
+.switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
+.switch.switch-row { margin-top: 16px; }
+.switch input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.switch-track {
+  flex: 0 0 auto; width: 36px; height: 20px;
+  background: var(--border-strong); border-radius: 999px; position: relative;
+  transition: background 0.15s;
+}
+.switch-thumb {
+  position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+  background: #fff; border-radius: 50%; box-shadow: 0 1px 2px rgba(24, 24, 27, 0.25);
+  transition: transform 0.15s;
+}
+.switch input:checked + .switch-track { background: var(--accent); }
+.switch input:checked + .switch-track .switch-thumb { transform: translateX(16px); }
+.switch input:focus-visible + .switch-track { box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.15); }
+.switch-label { font-size: 13px; color: var(--ink); }
+
+.btn-danger { color: var(--red); border-color: var(--border-strong); }
+.btn-danger:hover { color: var(--red); border-color: var(--red); background: #fff5f5; }
 
 /* ── login screen ───────────────────────────────────────────────────────── */
 
