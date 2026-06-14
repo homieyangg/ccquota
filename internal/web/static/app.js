@@ -103,30 +103,80 @@ function drawSparkline(canvas, points) {
 
 // ── Series area chart (canvas) ────────────────────────────────────────────────
 
-function drawSeriesChart(canvas, points, valueFn, color) {
+// _chartTooltip 取得(必要時建立)共用的浮動 tooltip 元素。
+function _chartTooltip() {
+  let el = document.getElementById('cc-chart-tooltip');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'cc-chart-tooltip';
+    el.className = 'chart-tooltip';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+// _fmtBucketTime 把 epoch 秒格式化成 MM/DD HH:MM(本地時間)。
+function _fmtBucketTime(ts) {
+  const d = new Date(ts * 1000);
+  const p = n => String(n).padStart(2, '0');
+  return `${p(d.getMonth() + 1)}/${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// drawSeriesChart 畫面積 + 線時序圖;滑鼠移上去顯示十字線、節點與數值 tooltip。
+// fmt(value) 回傳 tooltip 顯示的數值字串。
+function drawSeriesChart(canvas, points, valueFn, color, fmt) {
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.offsetWidth || 300;
   const h = 56;
   canvas.width = w * dpr; canvas.height = h * dpr;
   const ctx = canvas.getContext('2d'); ctx.scale(dpr, dpr);
-  const vals = (points || []).map(valueFn);
+  const pts = points || [];
+  const vals = pts.map(valueFn);
   if (vals.length < 2) {
     ctx.fillStyle = '#a1a1aa'; ctx.font = '10px sans-serif'; ctx.fillText('N/A', w / 2 - 6, h / 2);
+    canvas.onmousemove = null; canvas.onmouseleave = null;
     return;
   }
   const max = Math.max(...vals, 0.0000001);
   const pad = 4, yw = h - pad * 2, xw = w - pad * 2;
   const x = i => pad + (i / (vals.length - 1)) * xw;
   const y = v => pad + yw - (v / max) * yw;
-  // area
-  ctx.beginPath(); ctx.moveTo(x(0), h - pad);
-  vals.forEach((v, i) => ctx.lineTo(x(i), y(v)));
-  ctx.lineTo(x(vals.length - 1), h - pad); ctx.closePath();
-  ctx.fillStyle = color + '22'; ctx.fill();
-  // line
-  ctx.beginPath();
-  vals.forEach((v, i) => i === 0 ? ctx.moveTo(x(i), y(v)) : ctx.lineTo(x(i), y(v)));
-  ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke();
+
+  const render = hoverIdx => {
+    ctx.clearRect(0, 0, w, h);
+    // area
+    ctx.beginPath(); ctx.moveTo(x(0), h - pad);
+    vals.forEach((v, i) => ctx.lineTo(x(i), y(v)));
+    ctx.lineTo(x(vals.length - 1), h - pad); ctx.closePath();
+    ctx.fillStyle = color + '22'; ctx.fill();
+    // line
+    ctx.beginPath();
+    vals.forEach((v, i) => i === 0 ? ctx.moveTo(x(i), y(v)) : ctx.lineTo(x(i), y(v)));
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke();
+    // hover 十字線 + 節點
+    if (hoverIdx != null) {
+      const hx = x(hoverIdx), hy = y(vals[hoverIdx]);
+      ctx.beginPath(); ctx.moveTo(hx, pad); ctx.lineTo(hx, h - pad);
+      ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.beginPath(); ctx.arc(hx, hy, 3, 0, Math.PI * 2);
+      ctx.fillStyle = color; ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+  };
+  render(null);
+
+  const tip = _chartTooltip();
+  canvas.onmousemove = e => {
+    const rect = canvas.getBoundingClientRect();
+    let i = Math.round((e.clientX - rect.left - pad) / xw * (vals.length - 1));
+    i = Math.max(0, Math.min(vals.length - 1, i));
+    render(i);
+    tip.style.display = 'block';
+    tip.innerHTML = '<strong>' + (fmt ? fmt(vals[i]) : vals[i].toFixed(2)) + '</strong><br>' + _fmtBucketTime(pts[i].ts);
+    tip.style.left = (e.clientX + 12) + 'px';
+    tip.style.top = (e.clientY - 10) + 'px';
+  };
+  canvas.onmouseleave = () => { render(null); tip.style.display = 'none'; };
 }
 
 // ── Alpine component ──────────────────────────────────────────────────────────
@@ -517,8 +567,8 @@ document.addEventListener('alpine:init', () => {
       const bs = data.bucket_sec || 600;
       const costCanvas = document.getElementById('cost-' + user);
       const tokCanvas = document.getElementById('tok-' + user);
-      if (costCanvas) drawSeriesChart(costCanvas, data.points, p => p.cost_usd / (bs / 3600), '#18181b');
-      if (tokCanvas) drawSeriesChart(tokCanvas, data.points, p => p.tokens / bs, '#3b82f6');
+      if (costCanvas) drawSeriesChart(costCanvas, data.points, p => p.cost_usd / (bs / 3600), '#18181b', v => '$' + v.toFixed(2) + '/hr');
+      if (tokCanvas) drawSeriesChart(tokCanvas, data.points, p => p.tokens / bs, '#3b82f6', v => Math.round(v).toLocaleString() + ' tok/s');
     },
 
     async copyInstall(account, user) {

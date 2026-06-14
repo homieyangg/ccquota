@@ -488,8 +488,17 @@ button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.1
 .uc-metrics .m strong { font-size: 14px; font-variant-numeric: tabular-nums; }
 
 .user-chart { display: flex; flex-direction: column; gap: 5px; }
-.user-chart canvas { width: 100%; display: block; }
+.user-chart canvas { width: 100%; display: block; cursor: crosshair; }
 .chart-label { font-size: 11px; color: var(--ink-3); }
+
+/* 圖表 hover tooltip(浮動於 body) */
+.chart-tooltip {
+  position: fixed; z-index: 1000; pointer-events: none; display: none;
+  background: var(--ink); color: #fff; font-size: 11px; line-height: 1.45;
+  padding: 5px 8px; border-radius: var(--radius-sm); white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(24, 24, 27, 0.18);
+}
+.chart-tooltip strong { font-variant-numeric: tabular-nums; }
 
 .uc-actions { display: flex; gap: 8px; margin-top: 2px; }
 .uc-actions .btn-secondary { font-size: 12px; padding: 5px 10px; }
