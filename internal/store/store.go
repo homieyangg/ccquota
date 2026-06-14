@@ -444,3 +444,74 @@ func boolToSetting(b bool) string {
 	}
 	return "0"
 }
+
+// SeriesBucket 是某時間桶內的 user 成本/ token 加總。TS 為桶起點(epoch 秒)。
+type SeriesBucket struct {
+	TS     int64
+	Cost   float64
+	Tokens int64
+}
+
+// UserSeries 回傳 accountID/user 自 sinceTS 起、依 bucketSec 分桶的成本/ token 加總(只含非空桶,依時間升序)。
+func (s *Store) UserSeries(accountID, user string, sinceTS, bucketSec int64) ([]SeriesBucket, error) {
+	if bucketSec <= 0 {
+		bucketSec = 600
+	}
+	rows, err := s.db.Query(
+		`SELECT (ts/?)*? AS b, SUM(cost_usd), SUM(tokens)
+		   FROM user_cost
+		  WHERE account_id=? AND user=? AND ts>=?
+		  GROUP BY b ORDER BY b`,
+		bucketSec, bucketSec, accountID, user, sinceTS,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SeriesBucket
+	for rows.Next() {
+		var b SeriesBucket
+		if err := rows.Scan(&b.TS, &b.Cost, &b.Tokens); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
+// DistinctUsers 回傳 accountID 有成本紀錄的不同 user 清單(依名稱)。
+func (s *Store) DistinctUsers(accountID string) ([]string, error) {
+	rows, err := s.db.Query(
+		`SELECT DISTINCT user FROM user_cost WHERE account_id=? ORDER BY user`, accountID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// DeleteUser 刪除某 user 的成本紀錄與 enrollment(同一交易)。
+func (s *Store) DeleteUser(accountID, user string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM user_cost WHERE account_id=? AND user=?`, accountID, user); err != nil {
+		tx.Rollback()
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM enrollments WHERE account_id=? AND user=?`, accountID, user); err != nil {
+		tx.Rollback()
+		return err
+	}
+	return tx.Commit()
+}
