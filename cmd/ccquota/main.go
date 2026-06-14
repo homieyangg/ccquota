@@ -3,11 +3,13 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -28,7 +30,7 @@ func main() {
 		dbPath = "ccquota.db"
 	}
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: ccquota <login|serve|poll>")
+		fmt.Fprintln(os.Stderr, "usage: ccquota <login|set-token|serve|poll>")
 		os.Exit(2)
 	}
 	s, err := store.Open(dbPath)
@@ -40,6 +42,8 @@ func main() {
 	switch os.Args[1] {
 	case "login":
 		runLogin(s)
+	case "set-token":
+		runSetToken(s)
 	case "serve":
 		runServe(s)
 	case "poll":
@@ -87,6 +91,90 @@ func runLogin(s *store.Store) {
 		log.Fatal(err)
 	}
 	fmt.Printf("account %q connected.\n", *id)
+}
+
+// runSetToken 直接把現成的 OAuth token 寫進 DB,免走網頁 OAuth。
+// 來源優先序:--access-token > --creds 檔 > ~/.claude/.credentials.json。
+// --no-refresh 會把 expires_at 設成遠未來,讓本 poller 永不主動 refresh
+// (適合外部已有 refresher 在輪替同一個帳號 token 的情境)。
+func runSetToken(s *store.Store) {
+	fs := flag.NewFlagSet("set-token", flag.ExitOnError)
+	id := fs.String("id", "", "account id (short handle, e.g. main)")
+	label := fs.String("label", "", "human label (defaults to id)")
+	creds := fs.String("creds", "", "path to Claude credentials json (default ~/.claude/.credentials.json)")
+	accessTok := fs.String("access-token", "", "access token (overrides --creds)")
+	refreshTok := fs.String("refresh-token", "", "refresh token (used with --access-token)")
+	expiresIn := fs.Int64("expires-in", 0, "seconds until access token expiry (used with --access-token)")
+	noRefresh := fs.Bool("no-refresh", false, "store a far-future expiry so this poller never refreshes the token itself")
+	fs.Parse(os.Args[2:])
+	if *id == "" {
+		log.Fatal("set-token: --id required")
+	}
+	lbl := *label
+	if lbl == "" {
+		lbl = *id
+	}
+
+	now := time.Now().Unix()
+	var at, rt string
+	var expiresAt int64
+	if *accessTok != "" {
+		at, rt = *accessTok, *refreshTok
+		if *expiresIn > 0 {
+			expiresAt = now + *expiresIn
+		} else {
+			expiresAt = now + 3600
+		}
+	} else {
+		path := *creds
+		if path == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				log.Fatalf("set-token: cannot resolve home dir: %v", err)
+			}
+			path = filepath.Join(home, ".claude", ".credentials.json")
+		}
+		a, r, expMs, err := readClaudeCreds(path)
+		if err != nil {
+			log.Fatalf("set-token: %v", err)
+		}
+		at, rt, expiresAt = a, r, expMs/1000
+	}
+	if at == "" {
+		log.Fatal("set-token: no access token found")
+	}
+	if *noRefresh {
+		expiresAt = now + 3650*86400 // ~10 年,poller 永不因接近到期而 refresh
+	}
+
+	if err := s.UpsertAccount(store.Account{
+		ID: *id, Label: lbl,
+		AccessToken: at, RefreshToken: rt, ExpiresAt: expiresAt,
+	}); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("account %q token updated.\n", *id)
+}
+
+// readClaudeCreds 解析 Claude Code 的 ~/.claude/.credentials.json。
+// expiresAt 欄位是毫秒;回傳值原樣保留毫秒,由呼叫端換算。
+func readClaudeCreds(path string) (access, refresh string, expiresAtMs int64, err error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", 0, err
+	}
+	var doc struct {
+		ClaudeAiOauth struct {
+			AccessToken  string `json:"accessToken"`
+			RefreshToken string `json:"refreshToken"`
+			ExpiresAt    int64  `json:"expiresAt"`
+		} `json:"claudeAiOauth"`
+	}
+	if err := json.Unmarshal(b, &doc); err != nil {
+		return "", "", 0, fmt.Errorf("parse %s: %w", path, err)
+	}
+	o := doc.ClaudeAiOauth
+	return o.AccessToken, o.RefreshToken, o.ExpiresAt, nil
 }
 
 // envFloat64 讀取 env 變數並解析為 float64，失敗時回傳 defaultVal。
