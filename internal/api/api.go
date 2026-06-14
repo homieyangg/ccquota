@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/rand"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -10,7 +11,9 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	"github.com/ccquota/ccquota/internal/calc"
@@ -37,21 +40,27 @@ type pendingLogin struct {
 }
 
 type handler struct {
-	s        *store.Store
-	oc       *oauth.Client
-	staleSec int64
-	mu       sync.Mutex
-	pending  map[string]pendingLogin
+	s           *store.Store
+	oc          *oauth.Client
+	staleSec    int64
+	ingestToken string
+	publicURL   string
+	mu          sync.Mutex
+	pending     map[string]pendingLogin
 }
 
 // New returns an http.Handler with all API routes mounted.
 // staleSec 為帳號資料視為過時的秒數閾值（對應 CCQUOTA_POLLER_STALE_SEC）。
-func New(s *store.Store, oc *oauth.Client, staleSec int64) http.Handler {
+// ingestToken 為 /v1/metrics 的 Bearer token（空字串 = 關閉 enroll 功能）。
+// publicURL 為對外 URL（空字串時從 request 自動推導）。
+func New(s *store.Store, oc *oauth.Client, staleSec int64, ingestToken, publicURL string) http.Handler {
 	h := &handler{
-		s:        s,
-		oc:       oc,
-		staleSec: staleSec,
-		pending:  make(map[string]pendingLogin),
+		s:           s,
+		oc:          oc,
+		staleSec:    staleSec,
+		ingestToken: ingestToken,
+		publicURL:   strings.TrimRight(publicURL, "/"),
+		pending:     make(map[string]pendingLogin),
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -61,7 +70,30 @@ func New(s *store.Store, oc *oauth.Client, staleSec int64) http.Handler {
 	mux.Handle("/api/history", basicAuth(http.HandlerFunc(h.handleHistory)))
 	mux.Handle("/api/login/start", basicAuth(http.HandlerFunc(h.handleLoginStart)))
 	mux.Handle("/api/login/complete", basicAuth(http.HandlerFunc(h.handleLoginComplete)))
+	mux.Handle("/api/enroll", basicAuth(http.HandlerFunc(h.handleEnroll)))
+	// /e/<token> — enrollment script，不需要 admin auth
+	mux.HandleFunc("/e/", h.handleEnrollScript)
 	return mux
+}
+
+// baseURL 從 request 推導對外 base URL（scheme://host）。
+// 若 h.publicURL 非空則直接回傳。
+func (h *handler) baseURL(r *http.Request) string {
+	if h.publicURL != "" {
+		return h.publicURL
+	}
+	scheme := "https"
+	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		scheme = proto
+	} else {
+		host := r.Host
+		if strings.HasPrefix(host, "localhost") ||
+			strings.HasPrefix(host, "127.") ||
+			strings.HasPrefix(host, "[::1]") {
+			scheme = "http"
+		}
+	}
+	return scheme + "://" + r.Host
 }
 
 func basicAuth(next http.Handler) http.Handler {
@@ -354,6 +386,178 @@ func (h *handler) handleLoginComplete(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+type enrollReq struct {
+	Account string `json:"account"`
+	User    string `json:"user"`
+}
+
+func (h *handler) handleEnroll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if h.ingestToken == "" {
+		jsonError(w, "ingest not enabled (set CCQUOTA_INGEST_TOKEN)", http.StatusBadRequest)
+		return
+	}
+	var req enrollReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if req.User == "" {
+		jsonError(w, "user is required", http.StatusBadRequest)
+		return
+	}
+
+	// 產生 URL-safe 隨機 token（~24 chars）
+	raw := make([]byte, 18)
+	if _, err := rand.Read(raw); err != nil {
+		jsonError(w, "token generation failed", http.StatusInternalServerError)
+		return
+	}
+	token := base64.RawURLEncoding.EncodeToString(raw)
+
+	expiresAt := time.Now().Unix() + 24*3600
+	if err := h.s.CreateEnrollment(token, req.Account, req.User, expiresAt); err != nil {
+		jsonError(w, "db error", http.StatusInternalServerError)
+		return
+	}
+
+	base := h.baseURL(r)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"url":        base + "/e/" + token,
+		"expires_at": expiresAt,
+	})
+}
+
+// enrollScriptTmpl 是 GET /e/<token> 回傳的 shell script 模板。
+var enrollScriptTmpl = template.Must(template.New("enroll").Parse(`#!/usr/bin/env bash
+# ccquota enrollment script — 自動產生，請勿手動編輯
+set -euo pipefail
+
+LANG_SEL="${CCQUOTA_LANG:-en}"
+
+msg() {
+  local key="$1" extra="${2:-}"
+  case "$LANG_SEL" in
+    zh-TW)
+      case "$key" in
+        need_jq)  echo "錯誤：需要 jq，請先安裝 (brew install jq)" ;;
+        backed_up) echo "已備份設定檔至：$extra" ;;
+        created)  echo "已建立新設定檔：$extra" ;;
+        done)     echo "✓ 安裝完成！請重新啟動 Claude Code 以套用設定。" ;;
+        restart)  echo "提示：關閉並重新開啟 Claude Code（或執行 claude --restart）。" ;;
+        *)        echo "$key $extra" ;;
+      esac ;;
+    zh-CN)
+      case "$key" in
+        need_jq)  echo "错误：需要 jq，请先安装 (brew install jq)" ;;
+        backed_up) echo "已备份配置文件至：$extra" ;;
+        created)  echo "已创建新配置文件：$extra" ;;
+        done)     echo "✓ 安装完成！请重启 Claude Code 以应用配置。" ;;
+        restart)  echo "提示：关闭并重新打开 Claude Code（或执行 claude --restart）。" ;;
+        *)        echo "$key $extra" ;;
+      esac ;;
+    *)
+      case "$key" in
+        need_jq)  echo "Error: jq is required. Install it first (brew install jq)" ;;
+        backed_up) echo "Backed up settings to: $extra" ;;
+        created)  echo "Created settings file: $extra" ;;
+        done)     echo "✓ Installation complete! Restart Claude Code to apply settings." ;;
+        restart)  echo "Hint: close and reopen Claude Code (or run: claude --restart)." ;;
+        *)        echo "$key $extra" ;;
+      esac ;;
+  esac
+}
+
+if ! command -v jq &>/dev/null; then
+  msg need_jq >&2
+  exit 1
+fi
+
+SERVER={{.Server}}
+ACCOUNT={{.Account}}
+USER_NAME={{.User}}
+TOKEN={{.Token}}
+
+if [[ -n "${CLAUDE_CONFIG_DIR:-}" ]]; then
+  SETTINGS_FILE="$CLAUDE_CONFIG_DIR/settings.json"
+else
+  SETTINGS_FILE="$HOME/.claude/settings.json"
+fi
+mkdir -p "$(dirname "$SETTINGS_FILE")"
+
+BACKUP="${SETTINGS_FILE}.bak-$(date +%s)"
+if [[ -f "$SETTINGS_FILE" ]]; then
+  cp "$SETTINGS_FILE" "$BACKUP"
+  msg backed_up "$BACKUP"
+else
+  echo "{}" > "$SETTINGS_FILE"
+  msg created "$SETTINGS_FILE"
+  cp "$SETTINGS_FILE" "$BACKUP"
+fi
+
+UPDATED=$(jq \
+  --arg server  "$SERVER" \
+  --arg account "$ACCOUNT" \
+  --arg user    "$USER_NAME" \
+  --arg token   "$TOKEN" \
+  '
+  .env //= {} |
+  .env["CLAUDE_CODE_ENABLE_TELEMETRY"]                       = "1" |
+  .env["OTEL_METRICS_EXPORTER"]                              = "otlp" |
+  .env["OTEL_EXPORTER_OTLP_PROTOCOL"]                       = "http/protobuf" |
+  .env["OTEL_EXPORTER_OTLP_ENDPOINT"]                       = $server |
+  .env["OTEL_EXPORTER_OTLP_HEADERS"]                        = ("Authorization=Bearer " + $token) |
+  .env["OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"] = "delta" |
+  .env["OTEL_RESOURCE_ATTRIBUTES"]                          = ("ccquota.account=" + $account + ",ccquota.user=" + $user)
+  ' "$SETTINGS_FILE")
+
+printf '%s\n' "$UPDATED" > "$SETTINGS_FILE"
+
+msg done
+msg restart
+`))
+
+// scriptData 是 enrollScriptTmpl 的資料結構，所有值已 shell-quote。
+type scriptData struct {
+	Server  string
+	Account string
+	User    string
+	Token   string
+}
+
+// shellQuote 對字串做單引號 shell escape。
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+func (h *handler) handleEnrollScript(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimPrefix(r.URL.Path, "/e/")
+	if token == "" || strings.Contains(token, "/") {
+		http.NotFound(w, r)
+		return
+	}
+
+	now := time.Now().Unix()
+	accountID, user, ok, err := h.s.GetEnrollment(token, now)
+	if err != nil || !ok {
+		http.Error(w, "invalid or expired enrollment link", http.StatusNotFound)
+		return
+	}
+
+	base := h.baseURL(r)
+	w.Header().Set("Content-Type", "text/x-shellscript")
+	enrollScriptTmpl.Execute(w, scriptData{
+		Server:  shellQuote(base),
+		Account: shellQuote(accountID),
+		User:    shellQuote(user),
+		Token:   shellQuote(h.ingestToken),
+	})
 }
 
 func jsonError(w http.ResponseWriter, msg string, code int) {

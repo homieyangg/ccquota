@@ -35,7 +35,7 @@ func authedGet(t *testing.T, handler http.Handler, path string) *http.Response {
 
 func TestAccountsEmpty(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800)
+	h := New(s, &oauth.Client{}, 1800, "", "")
 	resp := authedGet(t, h, "/api/accounts")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("want 200, got %d", resp.StatusCode)
@@ -46,7 +46,7 @@ func TestAccountsWithReading(t *testing.T) {
 	s := testStore(t)
 	_ = s.UpsertAccount(store.Account{ID: "main", Label: "Main", AccessToken: "a", RefreshToken: "r", ExpiresAt: 9999})
 	_ = s.InsertReading(store.Reading{AccountID: "main", TS: time.Now().Unix(), SevenDay: 42, FiveHour: 10})
-	h := New(s, &oauth.Client{}, 1800)
+	h := New(s, &oauth.Client{}, 1800, "", "")
 	resp := authedGet(t, h, "/api/accounts")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("want 200, got %d", resp.StatusCode)
@@ -89,7 +89,7 @@ func TestAccountsCostCalc(t *testing.T) {
 	_ = s.InsertUserCost("acct1", "alice", sinceTS+10, 30.0, 1000)
 	_ = s.InsertUserCost("acct1", "bob", sinceTS+20, 20.0, 500)
 
-	h := New(s, &oauth.Client{}, 1800)
+	h := New(s, &oauth.Client{}, 1800, "", "")
 	resp := authedGet(t, h, "/api/accounts")
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("want 200, got %d", resp.StatusCode)
@@ -140,7 +140,7 @@ func TestAccountsCostCalc(t *testing.T) {
 
 func TestAuthRejectsNoCredentials(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800)
+	h := New(s, &oauth.Client{}, 1800, "", "")
 	req := httptest.NewRequest(http.MethodGet, "/api/accounts", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -151,7 +151,7 @@ func TestAuthRejectsNoCredentials(t *testing.T) {
 
 func TestAuthRejectsWrongPassword(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800)
+	h := New(s, &oauth.Client{}, 1800, "", "")
 	req := httptest.NewRequest(http.MethodGet, "/api/accounts", nil)
 	req.SetBasicAuth("admin", "wrongpassword")
 	w := httptest.NewRecorder()
@@ -163,7 +163,7 @@ func TestAuthRejectsWrongPassword(t *testing.T) {
 
 func TestHealthz(t *testing.T) {
 	s := testStore(t)
-	h := New(s, &oauth.Client{}, 1800)
+	h := New(s, &oauth.Client{}, 1800, "", "")
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
@@ -189,7 +189,7 @@ func TestLoginStartComplete(t *testing.T) {
 
 	s := testStore(t)
 	oc := &oauth.Client{HTTP: tokenSrv.Client(), TokenURL: tokenSrv.URL}
-	h := New(s, oc, 1800)
+	h := New(s, oc, 1800, "", "")
 
 	// Start login
 	startBody, _ := json.Marshal(map[string]string{"label": "test"})
@@ -254,4 +254,108 @@ func TestLoginStartComplete(t *testing.T) {
 	}
 
 	_ = context.Background() // suppress import
+}
+
+func TestEnrollNoAdmin(t *testing.T) {
+	s := testStore(t)
+	h := New(s, &oauth.Client{}, 1800, "itok", "https://demo.example")
+	req := httptest.NewRequest(http.MethodPost, "/api/enroll",
+		strings.NewReader(`{"account":"main","user":"alice"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", w.Code)
+	}
+}
+
+func TestEnrollSuccess(t *testing.T) {
+	s := testStore(t)
+	h := New(s, &oauth.Client{}, 1800, "itok", "https://demo.example")
+	body, _ := json.Marshal(map[string]string{"account": "main", "user": "alice"})
+	req := httptest.NewRequest(http.MethodPost, "/api/enroll", bytes.NewReader(body))
+	req.SetBasicAuth("admin", AdminPassword)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	url, _ := resp["url"].(string)
+	if !strings.Contains(url, "/e/") {
+		t.Fatalf("url should contain /e/, got %q", url)
+	}
+}
+
+func TestEnrollNoIngestToken(t *testing.T) {
+	s := testStore(t)
+	h := New(s, &oauth.Client{}, 1800, "", "https://demo.example")
+	body, _ := json.Marshal(map[string]string{"account": "main", "user": "alice"})
+	req := httptest.NewRequest(http.MethodPost, "/api/enroll", bytes.NewReader(body))
+	req.SetBasicAuth("admin", AdminPassword)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", w.Code)
+	}
+}
+
+func TestEnrollScriptValid(t *testing.T) {
+	s := testStore(t)
+	h := New(s, &oauth.Client{}, 1800, "itok", "https://demo.example")
+
+	// 先建立 enrollment
+	body, _ := json.Marshal(map[string]string{"account": "main", "user": "alice"})
+	req := httptest.NewRequest(http.MethodPost, "/api/enroll", bytes.NewReader(body))
+	req.SetBasicAuth("admin", AdminPassword)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("enroll want 200, got %d", w.Code)
+	}
+	var enrollResp map[string]any
+	json.NewDecoder(w.Body).Decode(&enrollResp)
+	url, _ := enrollResp["url"].(string)
+	// url = https://demo.example/e/<token>
+	parts := strings.Split(url, "/e/")
+	if len(parts) != 2 {
+		t.Fatalf("unexpected url format: %q", url)
+	}
+	token := parts[1]
+
+	// 取 script（不帶 admin auth）
+	req2 := httptest.NewRequest(http.MethodGet, "/e/"+token, nil)
+	w2 := httptest.NewRecorder()
+	h.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("script want 200, got %d", w2.Code)
+	}
+	script := w2.Body.String()
+	if !strings.Contains(script, "main") {
+		t.Error("script should contain account 'main'")
+	}
+	if !strings.Contains(script, "alice") {
+		t.Error("script should contain user 'alice'")
+	}
+	if !strings.Contains(script, "itok") {
+		t.Error("script should contain ingest token")
+	}
+	if !strings.Contains(script, "https://demo.example") {
+		t.Error("script should contain endpoint")
+	}
+}
+
+func TestEnrollScriptBadToken(t *testing.T) {
+	s := testStore(t)
+	h := New(s, &oauth.Client{}, 1800, "itok", "https://demo.example")
+	req := httptest.NewRequest(http.MethodGet, "/e/badtoken", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", w.Code)
+	}
 }

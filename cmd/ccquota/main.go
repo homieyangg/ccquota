@@ -219,8 +219,12 @@ func runServe(s *store.Store) {
 	staleSec := envInt64("CCQUOTA_POLLER_STALE_SEC", 1800)
 	mux := http.NewServeMux()
 	oc := &oauth.Client{}
-	apiHandler := apipkg.New(s, oc, staleSec)
+	apiHandler := apipkg.New(s, oc, staleSec,
+		os.Getenv("CCQUOTA_INGEST_TOKEN"),
+		os.Getenv("CCQUOTA_PUBLIC_URL"),
+	)
 	mux.Handle("/api/", apiHandler)
+	mux.Handle("/e/", apiHandler)
 	mux.Handle("/healthz", apiHandler)
 
 	ingestToken := os.Getenv("CCQUOTA_INGEST_TOKEN")
