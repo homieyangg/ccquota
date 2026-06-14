@@ -97,3 +97,30 @@ func TestTelegramSinkHTTPError(t *testing.T) {
 		t.Fatal("expected error on HTTP 400")
 	}
 }
+
+func TestBuildSinkTelegram(t *testing.T) {
+	s, err := alert.BuildSink("telegram", map[string]string{"bot_token": "T", "chat_id": "C"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts, ok := s.(*alert.TelegramSink)
+	if !ok || ts.Token != "T" || ts.ChatID != "C" {
+		t.Fatalf("unexpected sink %#v ok=%v", s, ok)
+	}
+}
+
+func TestBuildSinkWebhook(t *testing.T) {
+	s, err := alert.BuildSink("webhook", map[string]string{"url": "http://x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s.(*alert.WebhookSink); !ok {
+		t.Fatalf("want *WebhookSink, got %#v", s)
+	}
+}
+
+func TestBuildSinkUnknownType(t *testing.T) {
+	if _, err := alert.BuildSink("carrier-pigeon", nil); err == nil {
+		t.Fatal("want error for unknown type")
+	}
+}

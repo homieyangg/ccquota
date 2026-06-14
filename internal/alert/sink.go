@@ -97,3 +97,15 @@ func (w *WebhookSink) Send(ctx context.Context, text string) error {
 	}
 	return nil
 }
+
+// BuildSink 依頻道型別與(已解密的)設定建出對應的 Sink。
+func BuildSink(chType string, cfg map[string]string) (Sink, error) {
+	switch chType {
+	case "telegram":
+		return &TelegramSink{Token: cfg["bot_token"], ChatID: cfg["chat_id"]}, nil
+	case "webhook":
+		return &WebhookSink{URL: cfg["url"]}, nil
+	default:
+		return nil, fmt.Errorf("alert: unknown channel type %q", chType)
+	}
+}
