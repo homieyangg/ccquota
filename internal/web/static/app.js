@@ -97,6 +97,14 @@ document.addEventListener('alpine:init', () => {
     accounts: [],
     lastUpdated: '',
 
+    // enroll form
+    enrollAccount: '',
+    enrollUser: '',
+    enrollOneliner: '',
+    enrollMsg: '',
+    enrollMsgType: '', // 'success' | 'error'
+    enrollBtnDisabled: false,
+
     // connect form
     connectLabel: '',
     connectId: '',
@@ -169,6 +177,10 @@ document.addEventListener('alpine:init', () => {
         const data = await apiGet('/api/accounts');
         this.accounts = data;
         this.lastUpdated = this.t('last_updated') + ' ' + new Date().toLocaleTimeString();
+        // 預設選第一個帳號（若尚未選取）
+        if (data.length > 0 && !this.enrollAccount) {
+          this.enrollAccount = data[0].id;
+        }
         // fetch sparklines after accounts update
         await this._loadSparklines(data);
       } catch (e) {
@@ -203,6 +215,33 @@ document.addEventListener('alpine:init', () => {
       await this.$nextTick();
       for (const a of this.accounts) {
         if (a.has_reading) this._drawSparkline(a.id);
+      }
+    },
+
+    // ── Enrollment flow ───────────────────────────────────────────────────────
+
+    async generateEnrollLink() {
+      this.enrollBtnDisabled = true;
+      this.enrollMsg = '';
+      this.enrollMsgType = '';
+      this.enrollOneliner = '';
+      try {
+        const data = await apiPost('/api/enroll', {
+          account: this.enrollAccount,
+          user: this.enrollUser,
+        });
+        this.enrollOneliner = `bash <(curl -fsSL ${data.url})`;
+      } catch (e) {
+        this.enrollMsg = this.t('enroll_error') + ' ' + e.message;
+        this.enrollMsgType = 'error';
+      } finally {
+        this.enrollBtnDisabled = false;
+      }
+    },
+
+    copyEnrollLink() {
+      if (this.enrollOneliner) {
+        navigator.clipboard.writeText(this.enrollOneliner).catch(() => {});
       }
     },
 

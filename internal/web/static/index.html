@@ -162,6 +162,49 @@
       </div>
     </section>
 
+    <!-- Add User (enrollment) section -->
+    <section id="enroll-section">
+      <h2 x-text="t('enroll_section')">Add User</h2>
+      <div class="connect-form">
+
+        <div class="form-row">
+          <label x-text="t('enroll_account_label')">Account:</label>
+          <select x-model="enrollAccount">
+            <template x-for="acct in accounts" :key="acct.id">
+              <option :value="acct.id" x-text="acct.label || acct.id"></option>
+            </template>
+          </select>
+        </div>
+        <div class="form-row">
+          <label x-text="t('enroll_user_label')">Display name:</label>
+          <input type="text" x-model="enrollUser" placeholder="alice">
+        </div>
+
+        <button @click="generateEnrollLink()" :disabled="enrollBtnDisabled" x-text="t('enroll_btn')">Generate install link</button>
+
+        <!-- Result -->
+        <div x-show="enrollOneliner" style="display:none">
+          <div class="form-row">
+            <label x-text="t('enroll_link_label')">One-liner:</label>
+            <div class="url-row">
+              <input type="text" :value="enrollOneliner" readonly>
+              <button @click="copyEnrollLink()" x-text="t('enroll_copy_btn')">Copy</button>
+            </div>
+          </div>
+          <div class="cost-note" x-text="t('enroll_expires_note')"></div>
+        </div>
+
+        <!-- Status message -->
+        <div id="enroll-msg"
+          x-show="enrollMsg"
+          x-text="enrollMsg"
+          :class="enrollMsgType"
+          style="display:none">
+        </div>
+
+      </div>
+    </section>
+
     <!-- Connect Account section -->
     <section id="connect-section">
       <h2 x-text="t('connect_section')">Connect Account</h2>

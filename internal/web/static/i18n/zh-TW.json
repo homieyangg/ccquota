@@ -34,5 +34,13 @@
   "reverse_calc_note": "由消費額 ÷ 7 日% 反推",
   "share_used": "已用",
   "cost_section": "費用明細",
-  "period_cost": "期間費用"
+  "period_cost": "期間費用",
+  "enroll_section": "新增使用者",
+  "enroll_account_label": "帳號：",
+  "enroll_user_label": "顯示名稱：",
+  "enroll_btn": "產生安裝連結",
+  "enroll_link_label": "一行指令（在成員機器上貼上執行）：",
+  "enroll_expires_note": "連結 24 小時後失效，請私訊傳送（內含 ingest token，請勿公開）。",
+  "enroll_error": "錯誤：",
+  "enroll_copy_btn": "複製"
 }

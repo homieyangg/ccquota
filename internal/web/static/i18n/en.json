@@ -34,5 +34,13 @@
   "reverse_calc_note": "Reverse-calculated from spend ÷ 7d%",
   "share_used": "used",
   "cost_section": "Cost Breakdown",
-  "period_cost": "Period Cost"
+  "period_cost": "Period Cost",
+  "enroll_section": "Add User",
+  "enroll_account_label": "Account:",
+  "enroll_user_label": "Display name:",
+  "enroll_btn": "Generate install link",
+  "enroll_link_label": "One-liner (paste on teammate's machine):",
+  "enroll_expires_note": "Link expires in 24h. Treat it as a secret — it carries the ingest token. Send privately.",
+  "enroll_error": "Error:",
+  "enroll_copy_btn": "Copy"
 }
