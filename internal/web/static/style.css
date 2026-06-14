@@ -316,8 +316,10 @@ button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.1
 
 .app-dialog {
   border: none; padding: 0; background: transparent;
+  margin: auto;                 /* showModal() 置中靠 UA 的 margin:auto,被頂部 *{margin:0} 蓋掉,補回 */
   max-width: min(600px, calc(100vw - 32px));
   width: 100%;
+  max-height: calc(100vh - 32px);
 }
 /* native <dialog> backdrop */
 .app-dialog::backdrop {
