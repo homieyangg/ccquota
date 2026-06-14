@@ -71,7 +71,7 @@ func New(s *store.Store, oc *oauth.Client, staleSec int64, ingestToken, publicUR
 	mux.Handle("/api/login/start", basicAuth(http.HandlerFunc(h.handleLoginStart)))
 	mux.Handle("/api/login/complete", basicAuth(http.HandlerFunc(h.handleLoginComplete)))
 	mux.Handle("/api/enroll", basicAuth(http.HandlerFunc(h.handleEnroll)))
-	// /e/<token> — enrollment script，不需要 admin auth
+	// /e/<token>: enrollment script，不需要 admin auth
 	mux.HandleFunc("/e/", h.handleEnrollScript)
 	return mux
 }
@@ -436,7 +436,7 @@ func (h *handler) handleEnroll(w http.ResponseWriter, r *http.Request) {
 
 // enrollScriptTmpl 是 GET /e/<token> 回傳的 shell script 模板。
 var enrollScriptTmpl = template.Must(template.New("enroll").Parse(`#!/usr/bin/env bash
-# ccquota enrollment script — 自動產生，請勿手動編輯
+# ccquota enrollment script (自動產生，請勿手動編輯)
 set -euo pipefail
 
 LANG_SEL="${CCQUOTA_LANG:-en}"

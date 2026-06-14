@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install-client.sh — 設定 Claude Code OTel telemetry 指向 ccquota server
+# install-client.sh: 設定 Claude Code OTel telemetry 指向 ccquota server
 set -euo pipefail
 
 # ── i18n ──────────────────────────────────────────────────────────────────────

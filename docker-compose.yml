@@ -11,9 +11,9 @@ services:
       - ccquota_data:/data
     environment:
       CCQUOTA_DB: /data/ccquota.db
-      # Required: MUST change — admin password for web UI / API
+      # Required: MUST change. Admin password for web UI / API
       CCQUOTA_ADMIN_PASSWORD: changeme
-      # Required: MUST change — token for cost ingest (POST /v1/metrics)
+      # Required: MUST change. Token for cost ingest (POST /v1/metrics)
       CCQUOTA_INGEST_TOKEN: changeme-ingest-token
       # Optional: Telegram alerts
       # CCQUOTA_TELEGRAM_TOKEN: "123456:AABBCCDDabcdef"

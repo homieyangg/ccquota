@@ -15,10 +15,10 @@ import "fmt"
 var templates = map[string]map[string]string{
 	"en": {
 		"reset":          "🔄 <b>Quota Reset</b>\nAccount: <code>%s</code>\n7-day usage reset: <b>%.0f%%</b> → <b>%.0f%%</b>",
-		"weekly_warn":    "🟡 <b>Weekly Quota Warning</b>\nAccount: <code>%s</code>\n7-day usage at <b>%.0f%%</b> — approaching limit",
-		"weekly_crit":    "🚨 <b>Weekly Quota Critical</b>\nAccount: <code>%s</code>\n7-day usage at <b>%.0f%%</b> — near limit",
-		"five_hour_crit": "🚨 <b>5-Hour Quota Critical</b>\nAccount: <code>%s</code>\n5-hour usage at <b>%.0f%%</b> — near limit",
-		"stale":          "⚠️ <b>Poller Stale</b>\nAccount: <code>%s</code>\nNo data for %d seconds — poller may be down",
+		"weekly_warn":    "🟡 <b>Weekly Quota Warning</b>\nAccount: <code>%s</code>\n7-day usage at <b>%.0f%%</b>, approaching limit",
+		"weekly_crit":    "🚨 <b>Weekly Quota Critical</b>\nAccount: <code>%s</code>\n7-day usage at <b>%.0f%%</b>, near limit",
+		"five_hour_crit": "🚨 <b>5-Hour Quota Critical</b>\nAccount: <code>%s</code>\n5-hour usage at <b>%.0f%%</b>, near limit",
+		"stale":          "⚠️ <b>Poller Stale</b>\nAccount: <code>%s</code>\nNo data for %d seconds. Poller may be down.",
 	},
 	"zh-TW": {
 		"reset":          "🔄 <b>配額已重置</b>\n帳號：<code>%s</code>\n7日用量重置：<b>%.0f%%</b> → <b>%.0f%%</b>",

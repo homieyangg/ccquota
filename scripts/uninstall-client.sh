@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# uninstall-client.sh — 移除 ccquota 安裝的 OTel 設定
+# uninstall-client.sh: 移除 ccquota 安裝的 OTel 設定
 set -euo pipefail
 
 # ── i18n ──────────────────────────────────────────────────────────────────────

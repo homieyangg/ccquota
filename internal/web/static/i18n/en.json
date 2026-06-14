@@ -1,5 +1,5 @@
 {
-  "title": "ccquota — Claude Code Quota Dashboard",
+  "title": "ccquota: Claude Code Quota Dashboard",
   "heading": "ccquota Dashboard",
   "accounts_section": "Accounts",
   "connect_section": "Connect Account",
@@ -40,7 +40,7 @@
   "enroll_user_label": "Display name:",
   "enroll_btn": "Generate install link",
   "enroll_link_label": "One-liner (paste on teammate's machine):",
-  "enroll_expires_note": "Link expires in 24h. Treat it as a secret — it carries the ingest token. Send privately.",
+  "enroll_expires_note": "Link expires in 24h. It carries the ingest token, so send it privately.",
   "enroll_error": "Error:",
   "enroll_copy_btn": "Copy"
 }

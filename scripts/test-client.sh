@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-client.sh — smoke test for install-client.sh / uninstall-client.sh
+# test-client.sh: smoke test for install-client.sh / uninstall-client.sh
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
