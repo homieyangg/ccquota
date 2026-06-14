@@ -47,6 +47,22 @@ async function apiPost(path, body) {
   return res.json();
 }
 
+async function apiPut(path, body) {
+  const res = await fetch(path, {
+    method: 'PUT', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `${res.status}`); }
+  return res.json();
+}
+
+async function apiDelete(path) {
+  const res = await fetch(path, { method: 'DELETE', credentials: 'include' });
+  if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `${res.status}`); }
+  return res.json();
+}
+
 // ── Sparkline (canvas) ────────────────────────────────────────────────────────
 
 function drawSparkline(canvas, points) {
@@ -146,6 +162,14 @@ document.addEventListener('alpine:init', () => {
     mustChangeConfirmPw: '',
     mustChangeMsg: '',
     mustChangeBtnDisabled: false,
+
+    // notifications
+    settingsTab: 'account',
+    channels: [],
+    thresholds: { SevenDayWarn: 75, SevenDayCrit: 90, FiveHourCrit: 95, ResetNotify: true },
+    newChannel: { type: 'telegram', enabled: true, config: { bot_token: '', chat_id: '' } },
+    notifMsg: '',
+    notifMsgType: '',
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
@@ -261,11 +285,66 @@ document.addEventListener('alpine:init', () => {
       this.settingsMsg = '';
       this.settingsMsgType = '';
       this.settingsBtnDisabled = false;
+      this.settingsTab = 'account';
+      this.loadNotifications();
       this.$refs.settingsDialog && this.$refs.settingsDialog.showModal();
     },
 
     closeSettingsModal() {
       this.$refs.settingsDialog && this.$refs.settingsDialog.close();
+    },
+
+    // ── Notifications ─────────────────────────────────────────────────────────
+
+    async loadNotifications() {
+      try {
+        const data = await apiGet('/api/notifications');
+        this.channels = data.channels || [];
+        // 清空 bot_token，避免將遮罩值回存；後端收到空值時保留原 token
+        for (const ch of this.channels) {
+          if (ch.type === 'telegram' && ch.config) ch.config.bot_token = '';
+        }
+        if (data.thresholds) this.thresholds = data.thresholds;
+      } catch (e) { console.error('load notifications', e); }
+    },
+
+    async addChannel() {
+      this.notifMsg = '';
+      try {
+        await apiPost('/api/notifications/channels', this.newChannel);
+        this.newChannel = { type: 'telegram', enabled: true, config: { bot_token: '', chat_id: '' } };
+        await this.loadNotifications();
+        this.notifMsg = this.t('notif_saved'); this.notifMsgType = 'success';
+      } catch (e) { this.notifMsg = e.message; this.notifMsgType = 'error'; }
+    },
+
+    async saveChannel(ch) {
+      try {
+        await apiPut(`/api/notifications/channels/${ch.id}`, { enabled: ch.enabled, config: ch.config });
+        await this.loadNotifications();
+        this.notifMsg = this.t('notif_saved'); this.notifMsgType = 'success';
+      } catch (e) { this.notifMsg = e.message; this.notifMsgType = 'error'; }
+    },
+
+    async deleteChannel(ch) {
+      try { await apiDelete(`/api/notifications/channels/${ch.id}`); await this.loadNotifications(); }
+      catch (e) { this.notifMsg = e.message; this.notifMsgType = 'error'; }
+    },
+
+    async testChannel(ch) {
+      this.notifMsg = '';
+      try {
+        const r = await apiPost(`/api/notifications/channels/${ch.id}/test`, {});
+        if (r.status === 'ok') { this.notifMsg = this.t('notif_test_ok'); this.notifMsgType = 'success'; }
+        else { this.notifMsg = this.t('notif_test_fail') + ': ' + (r.error || ''); this.notifMsgType = 'error'; }
+      } catch (e) { this.notifMsg = this.t('notif_test_fail') + ': ' + e.message; this.notifMsgType = 'error'; }
+    },
+
+    async saveThresholds() {
+      try {
+        await apiPut('/api/notifications/thresholds', this.thresholds);
+        this.notifMsg = this.t('notif_saved'); this.notifMsgType = 'success';
+      } catch (e) { this.notifMsg = e.message; this.notifMsgType = 'error'; }
     },
 
     async doChangePassword() {

@@ -342,7 +342,7 @@
       @click.self="closeSettingsModal()">
       <div class="dialog-inner">
         <div class="dialog-header">
-          <h2 x-text="t('change_password')"></h2>
+          <h2 x-text="t('settings')"></h2>
           <button class="dialog-close" @click="closeSettingsModal()" :aria-label="t('close')">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"
               xmlns="http://www.w3.org/2000/svg">
@@ -350,21 +350,103 @@
             </svg>
           </button>
         </div>
-        <div class="connect-form dialog-body">
-          <div class="form-row">
-            <label x-text="t('current_password')"></label>
-            <input type="password" x-model="settingsCurPw" autocomplete="current-password">
+        <div class="dialog-body">
+
+          <!-- tab bar -->
+          <div class="dialog-tabs">
+            <button type="button" :class="{active: settingsTab==='account'}" @click="settingsTab='account'" x-text="t('tab_account')"></button>
+            <button type="button" :class="{active: settingsTab==='notifications'}" @click="settingsTab='notifications'; loadNotifications()" x-text="t('tab_notifications')"></button>
           </div>
-          <div class="form-row">
-            <label x-text="t('new_password')"></label>
-            <input type="password" x-model="settingsNewPw" autocomplete="new-password">
+
+          <!-- ── Account tab ───────────────────────────────────────────────── -->
+          <div x-show="settingsTab==='account'">
+            <div class="form-row">
+              <label x-text="t('current_password')"></label>
+              <input type="password" x-model="settingsCurPw" autocomplete="current-password">
+            </div>
+            <div class="form-row">
+              <label x-text="t('new_password')"></label>
+              <input type="password" x-model="settingsNewPw" autocomplete="new-password">
+            </div>
+            <div class="form-row">
+              <label x-text="t('confirm_password')"></label>
+              <input type="password" x-model="settingsConfirmPw" autocomplete="new-password">
+            </div>
+            <button @click="doChangePassword()" :disabled="settingsBtnDisabled" x-text="t('change_password')"></button>
+            <div x-show="settingsMsg" x-text="settingsMsg" :class="settingsMsgType" style="display:none;margin-top:12px;font-size:13px;"></div>
           </div>
-          <div class="form-row">
-            <label x-text="t('confirm_password')"></label>
-            <input type="password" x-model="settingsConfirmPw" autocomplete="new-password">
+
+          <!-- ── Notifications tab ─────────────────────────────────────────── -->
+          <div x-show="settingsTab==='notifications'" style="display:none">
+            <h3 x-text="t('notif_channels')" style="font-size:13px;font-weight:600;color:var(--ink-2);margin-bottom:12px;"></h3>
+            <p class="no-reading" x-show="channels.length===0" x-text="t('notif_no_channels')" style="display:none;text-align:left;padding:8px 0;"></p>
+            <template x-for="ch in channels" :key="ch.id">
+              <div class="channel-row">
+                <div class="channel-head">
+                  <strong x-text="ch.type"></strong>
+                  <label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" x-model="ch.enabled"> <span x-text="t('notif_enabled')"></span></label>
+                </div>
+                <template x-if="ch.type==='telegram'">
+                  <div class="form-row" style="margin-bottom:0;gap:8px;">
+                    <input type="password" :placeholder="t('notif_bot_token')" x-model="ch.config.bot_token" autocomplete="off">
+                    <small style="font-size:11px;color:var(--ink-3);" x-text="t('notif_token_keep_hint')"></small>
+                    <input type="text" :placeholder="t('notif_chat_id')" x-model="ch.config.chat_id">
+                  </div>
+                </template>
+                <template x-if="ch.type==='webhook'">
+                  <div class="form-row" style="margin-bottom:0;">
+                    <input type="text" :placeholder="t('notif_webhook_url')" x-model="ch.config.url">
+                  </div>
+                </template>
+                <div class="channel-actions">
+                  <button type="button" @click="saveChannel(ch)" x-text="t('notif_save')"></button>
+                  <button type="button" @click="testChannel(ch)" x-text="t('notif_test')"></button>
+                  <button type="button" @click="deleteChannel(ch)" x-text="t('notif_delete')"></button>
+                </div>
+              </div>
+            </template>
+
+            <h4 x-text="t('notif_add_channel')" style="font-size:13px;font-weight:600;color:var(--ink-2);margin:16px 0 10px;"></h4>
+            <div class="form-row">
+              <select x-model="newChannel.type">
+                <option value="telegram">telegram</option>
+                <option value="webhook">webhook</option>
+              </select>
+            </div>
+            <template x-if="newChannel.type==='telegram'">
+              <div class="form-row">
+                <input type="password" :placeholder="t('notif_bot_token')" x-model="newChannel.config.bot_token" autocomplete="off">
+                <input type="text" :placeholder="t('notif_chat_id')" x-model="newChannel.config.chat_id">
+              </div>
+            </template>
+            <template x-if="newChannel.type==='webhook'">
+              <div class="form-row">
+                <input type="text" :placeholder="t('notif_webhook_url')" x-model="newChannel.config.url">
+              </div>
+            </template>
+            <button type="button" @click="addChannel()" x-text="t('notif_add_channel')" style="margin-bottom:20px;"></button>
+
+            <h3 x-text="t('notif_thresholds')" style="font-size:13px;font-weight:600;color:var(--ink-2);margin-bottom:12px;"></h3>
+            <div class="form-row">
+              <label x-text="t('notif_seven_day_warn')"></label>
+              <input type="number" x-model.number="thresholds.SevenDayWarn">
+            </div>
+            <div class="form-row">
+              <label x-text="t('notif_seven_day_crit')"></label>
+              <input type="number" x-model.number="thresholds.SevenDayCrit">
+            </div>
+            <div class="form-row">
+              <label x-text="t('notif_five_hour_crit')"></label>
+              <input type="number" x-model.number="thresholds.FiveHourCrit">
+            </div>
+            <div class="form-row">
+              <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" x-model="thresholds.ResetNotify"> <span x-text="t('notif_reset_notify')"></span></label>
+            </div>
+            <button type="button" @click="saveThresholds()" x-text="t('notif_save')"></button>
+
+            <div x-show="notifMsg" x-text="notifMsg" :class="notifMsgType" style="display:none;margin-top:12px;font-size:13px;"></div>
           </div>
-          <button @click="doChangePassword()" :disabled="settingsBtnDisabled" x-text="t('change_password')"></button>
-          <div x-show="settingsMsg" x-text="settingsMsg" :class="settingsMsgType" style="display:none;margin-top:12px;font-size:13px;"></div>
+
         </div>
       </div>
     </dialog>

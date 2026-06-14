@@ -355,6 +355,55 @@ button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.1
   max-width: none;
 }
 
+/* ── dialog tabs ────────────────────────────────────────────────────────── */
+
+.dialog-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.dialog-tabs button {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 12px;
+  cursor: pointer;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 0;
+  transition: color 0.15s;
+  margin-bottom: -1px;
+}
+.dialog-tabs button:hover { color: var(--ink-2); opacity: 1; }
+.dialog-tabs button.active { color: var(--ink); border-bottom-color: var(--accent); }
+
+/* ── notification channel rows ──────────────────────────────────────────── */
+
+.channel-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.channel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.channel-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.channel-actions button {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
 /* ── login screen ───────────────────────────────────────────────────────── */
 
 #login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; }
