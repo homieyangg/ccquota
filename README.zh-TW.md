@@ -21,7 +21,7 @@ docker run -d -p 11451:11451 -v ccquota:/data \
 在儀表板輸入名字，拿到一條安裝連結，對方跑一次：
 
 ```bash
-bash <(curl -fsSL https://your-host/e/TOKEN)
+bash <(curl -fsSL -A ccquota-setup https://your-host/e/TOKEN)
 ```
 
 ## 設定

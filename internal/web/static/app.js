@@ -423,7 +423,8 @@ document.addEventListener('alpine:init', () => {
           account: this.enrollAccount,
           user: this.enrollUser,
         });
-        this.enrollOneliner = `bash <(curl -fsSL ${data.url})`;
+        // -A 自報 UA:有些反代/WAF 會擋預設 curl UA(例如擋 bot),帶一個明確 UA 才抓得到腳本。
+        this.enrollOneliner = `bash <(curl -fsSL -A ccquota-setup ${data.url})`;
       } catch (e) {
         this.enrollMsg = this.t('enroll_error') + ' ' + e.message;
         this.enrollMsgType = 'error';

@@ -21,7 +21,7 @@ Open `http://localhost:11451` and connect your Claude account.
 Type a name in the dashboard to get an install link. They run it once:
 
 ```bash
-bash <(curl -fsSL https://your-host/e/TOKEN)
+bash <(curl -fsSL -A ccquota-setup https://your-host/e/TOKEN)
 ```
 
 ## Config
