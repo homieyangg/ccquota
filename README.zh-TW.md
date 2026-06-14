@@ -30,9 +30,23 @@ docker run -d \
 
 > 如果沒設定 `CCQUOTA_ADMIN_PASSWORD`,第一次啟動時會自動產生一組並印在 container log 裡。
 
-## 新增使用者（選用,追蹤花費）
+## 新增使用者（選用，追蹤花費）
 
-在每位成員的機器上執行（需要能連到 server）：
+### 一鍵 Enrollment（推薦）
+
+1. 在 ccquota 管理介面點「**新增使用者**」，選擇帳號、輸入顯示名稱，按「產生安裝連結」。
+2. 把產生的連結**私訊**傳給成員（連結內含 ingest token，請勿公開）。
+3. 成員在自己機器上執行一行指令：
+
+```bash
+bash <(curl -fsSL https://your-ccquota-host/e/<token>)
+```
+
+完成，不需要任何參數。連結 24 小時後失效。
+
+> 如果 ccquota server 在 reverse proxy 後面、無法從 request 自動推導外部 URL，請設定 `CCQUOTA_PUBLIC_URL=https://your-host`。
+
+### 手動 / 進階方式
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/OWNER/ccquota/main/scripts/install-client.sh | bash \
@@ -43,8 +57,7 @@ curl -fsSL https://raw.githubusercontent.com/OWNER/ccquota/main/scripts/install-
   --token <CCQUOTA_INGEST_TOKEN>
 ```
 
-要新增另一位使用者,在不同機器用不同的 `--user` 值執行一遍就好。
-要移除某人的 client,在對方機器執行 `uninstall-client.sh`。
+要移除某人的 client，在對方機器執行 `uninstall-client.sh`。
 
 ## 設定
 
@@ -54,7 +67,8 @@ curl -fsSL https://raw.githubusercontent.com/OWNER/ccquota/main/scripts/install-
 |---|---|---|
 | `CCQUOTA_DB` | `ccquota.db` | SQLite 資料庫路徑 |
 | `CCQUOTA_ADMIN_PASSWORD` | *(自動產生)* | Web UI 與 API 的 Basic-auth 密碼 |
-| `CCQUOTA_INGEST_TOKEN` | *(關閉)* | 啟用 `POST /v1/metrics` 花費 ingest 的 Bearer token |
+| `CCQUOTA_INGEST_TOKEN` | *(關閉)* | 啟用 `POST /v1/metrics` 花費 ingest 與 enrollment 連結功能的 Bearer token |
+| `CCQUOTA_PUBLIC_URL` | *(自動推導)* | 對外 base URL（如 `https://ccquota.example.com`）；reverse proxy 後面無法自動推導時設定 |
 | `CCQUOTA_ALERT_LANG` | `en` | 通知訊息語言（`en` / `zh-TW` / `zh-CN`） |
 | `CCQUOTA_TELEGRAM_TOKEN` | — | Telegram bot token（通知用） |
 | `CCQUOTA_TELEGRAM_CHAT` | — | Telegram 聊天室/群組 ID |

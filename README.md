@@ -32,7 +32,21 @@ Open `http://localhost:8080`, click **"Connect Claude account"**, and paste the 
 
 ## Add a user (optional cost tracking)
 
-Run this on each team member's machine (requires the server to be reachable):
+### One-line enrollment (recommended)
+
+1. In the ccquota web UI, go to **"Add User"**, pick an account, type the display name, and click **"Generate install link"**.
+2. Send the resulting link **privately** to the teammate (it carries the ingest token — treat it as a secret).
+3. The teammate runs one command on their machine:
+
+```bash
+bash <(curl -fsSL https://your-ccquota-host/e/<token>)
+```
+
+That's it — zero params needed. The link expires in 24 hours.
+
+> If your ccquota server sits behind a reverse proxy and can't infer its own external URL, set `CCQUOTA_PUBLIC_URL=https://your-host` so the generated link is correct.
+
+### Manual / advanced method
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/OWNER/ccquota/main/scripts/install-client.sh | bash \
@@ -43,7 +57,6 @@ curl -fsSL https://raw.githubusercontent.com/OWNER/ccquota/main/scripts/install-
   --token <CCQUOTA_INGEST_TOKEN>
 ```
 
-To add another user, run the same command on a different machine with a different `--user` value.
 To remove a user's client, run `uninstall-client.sh` on their machine.
 
 ## Configuration
@@ -54,7 +67,8 @@ All configuration is via environment variables:
 |---|---|---|
 | `CCQUOTA_DB` | `ccquota.db` | Path to the SQLite database |
 | `CCQUOTA_ADMIN_PASSWORD` | *(auto-generated)* | Basic-auth password for the web UI and API |
-| `CCQUOTA_INGEST_TOKEN` | *(disabled)* | Bearer token that enables `POST /v1/metrics` for cost ingest |
+| `CCQUOTA_INGEST_TOKEN` | *(disabled)* | Bearer token that enables `POST /v1/metrics` for cost ingest and the enrollment link feature |
+| `CCQUOTA_PUBLIC_URL` | *(auto)* | External base URL (e.g. `https://ccquota.example.com`); required if the server can't infer its own URL from request headers |
 | `CCQUOTA_ALERT_LANG` | `en` | Alert message language (`en` / `zh-TW` / `zh-CN`) |
 | `CCQUOTA_TELEGRAM_TOKEN` | — | Telegram bot token for alerts |
 | `CCQUOTA_TELEGRAM_CHAT` | — | Telegram chat/group ID for alerts |

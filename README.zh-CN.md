@@ -32,7 +32,21 @@ docker run -d \
 
 ## 添加用户（可选，追踪花费）
 
-在每位成员的机器上执行（需要能连接到服务器）：
+### 一键 Enrollment（推荐）
+
+1. 在 ccquota 管理界面点「**添加用户**」，选择账号、输入显示名称，点击「生成安装链接」。
+2. 将生成的链接**私信**发送给成员（链接内含 ingest token，请勿公开）。
+3. 成员在自己的机器上执行一行命令：
+
+```bash
+bash <(curl -fsSL https://your-ccquota-host/e/<token>)
+```
+
+完成，无需任何参数。链接 24 小时后失效。
+
+> 如果 ccquota server 在反向代理后面、无法从请求中自动推断外部 URL，请设置 `CCQUOTA_PUBLIC_URL=https://your-host`。
+
+### 手动 / 高级方式
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/OWNER/ccquota/main/scripts/install-client.sh | bash \
@@ -43,7 +57,6 @@ curl -fsSL https://raw.githubusercontent.com/OWNER/ccquota/main/scripts/install-
   --token <CCQUOTA_INGEST_TOKEN>
 ```
 
-要添加另一位用户，在不同机器用不同的 `--user` 值执行一遍即可。
 要移除某人的 client，在对方机器执行 `uninstall-client.sh`。
 
 ## 配置
@@ -54,7 +67,8 @@ curl -fsSL https://raw.githubusercontent.com/OWNER/ccquota/main/scripts/install-
 |---|---|---|
 | `CCQUOTA_DB` | `ccquota.db` | SQLite 数据库路径 |
 | `CCQUOTA_ADMIN_PASSWORD` | *(自动生成)* | Web UI 与 API 的 Basic-auth 密码 |
-| `CCQUOTA_INGEST_TOKEN` | *(关闭)* | 启用 `POST /v1/metrics` 花费 ingest 的 Bearer token |
+| `CCQUOTA_INGEST_TOKEN` | *(关闭)* | 启用 `POST /v1/metrics` 花费 ingest 与 enrollment 链接功能的 Bearer token |
+| `CCQUOTA_PUBLIC_URL` | *(自动推断)* | 对外 base URL（如 `https://ccquota.example.com`）；反向代理后无法自动推断时设置 |
 | `CCQUOTA_ALERT_LANG` | `en` | 通知消息语言（`en` / `zh-TW` / `zh-CN`） |
 | `CCQUOTA_TELEGRAM_TOKEN` | — | Telegram bot token（通知用） |
 | `CCQUOTA_TELEGRAM_CHAT` | — | Telegram 聊天室/群组 ID |
