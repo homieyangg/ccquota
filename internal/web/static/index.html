@@ -116,24 +116,24 @@
               <!-- 帳號摘要列 -->
               <div class="account-summary" :class="{ stale: acct.stale }">
                 <div class="sum-metric">
-                  <span x-text="acct.label || acct.id"></span>
-                  <strong style="font-family:var(--mono);font-size:11px;color:var(--ink-3)" x-text="acct.id"></strong>
+                  <strong x-text="acct.label || acct.id"></strong>
+                  <span class="sum-id" x-text="acct.id"></span>
                 </div>
                 <span class="stale-badge" x-show="acct.stale" x-text="t('stale_warning')" style="display:none"></span>
                 <div class="sum-metric" x-show="acct.has_reading" style="display:none">
-                  <span x-text="t('seven_day_label')"></span>
+                  <span class="sum-label" x-text="t('seven_day_label')"></span>
                   <strong x-text="fmtPct(acct.seven_day)"></strong>
                 </div>
                 <div class="sum-metric" x-show="acct.has_reading" style="display:none">
-                  <span x-text="t('five_hour_label')"></span>
+                  <span class="sum-label" x-text="t('five_hour_label')"></span>
                   <strong x-text="fmtPct(acct.five_hour)"></strong>
                 </div>
                 <div class="sum-metric" x-show="acct.has_reading" style="display:none">
-                  <span x-text="t('resets_in')"></span>
+                  <span class="sum-label" x-text="t('resets_in')"></span>
                   <strong x-text="countdown(acct.seven_day_resets_at)"></strong>
                 </div>
                 <div class="sum-metric" x-show="acct.has_reading" style="display:none">
-                  <span x-text="t('weekly_budget')"></span>
+                  <span class="sum-label" x-text="t('weekly_budget')"></span>
                   <strong x-text="'$' + (acct.cost.weekly_budget_usd || 0).toFixed(2)"></strong>
                 </div>
                 <span class="no-reading" x-show="!acct.has_reading" x-text="t('no_reading')"
@@ -141,8 +141,7 @@
               </div>
 
               <!-- 使用者區塊標題 -->
-              <div style="font-size:13px;font-weight:600;color:var(--ink-2);margin-bottom:12px;"
-                x-text="t('users_section')"></div>
+              <div class="users-heading" x-text="t('users_section')"></div>
 
               <!-- 使用者卡片格線 -->
               <div class="user-grid">
@@ -167,15 +166,15 @@
                     <!-- 數字摘要 -->
                     <div class="uc-metrics">
                       <div class="m">
-                        <div style="font-size:11px;color:var(--ink-3)" x-text="t('user_period_cost')"></div>
+                        <div class="m-label" x-text="t('user_period_cost')"></div>
                         <strong x-text="'$' + u.cost_usd.toFixed(2)"></strong>
                       </div>
                       <div class="m">
-                        <div style="font-size:11px;color:var(--ink-3)" x-text="t('user_period_tokens')"></div>
+                        <div class="m-label" x-text="t('user_period_tokens')"></div>
                         <strong x-text="u.tokens"></strong>
                       </div>
                       <div class="m">
-                        <div style="font-size:11px;color:var(--ink-3)" x-text="t('user_share')"></div>
+                        <div class="m-label" x-text="t('user_share')"></div>
                         <strong x-text="u.share_pct.toFixed(1) + '%'"></strong>
                       </div>
                     </div>
@@ -197,8 +196,7 @@
                     <div class="uc-actions">
                       <button class="btn-secondary" @click="copyInstall(acct.id, u.user)"
                         x-text="copyMsg === u.user ? t('copied') : t('copy_install')"></button>
-                      <button class="btn-secondary"
-                        style="color:var(--red);border-color:var(--red);"
+                      <button class="btn-secondary btn-danger"
                         @click="removeUser(acct.id, u.user)"
                         x-text="t('delete_user')"></button>
                     </div>

@@ -171,11 +171,8 @@ section h2 {
 }
 section h2 .count { color: var(--ink-3); font-weight: 500; margin-left: 6px; }
 
-#accounts-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
-  gap: 16px;
-}
+/* 縱向排列：每個帳號佔全寬，摘要列在上、使用者格線在下 */
+#accounts-grid { display: flex; flex-direction: column; gap: 32px; }
 
 /* ── account card ───────────────────────────────────────────────────────── */
 
@@ -433,50 +430,71 @@ button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.1
 
 /* ── per-user cards ─────────────────────────────────────────────────────────── */
 
-/* 改為縱向排列：每個帳號佔全寬，底下接使用者格線 */
-#accounts-grid { display: flex; flex-direction: column; gap: 24px; }
-
 .account-wrap { display: flex; flex-direction: column; }
 
+/* 帳號摘要列：metric 之間用細分隔線，數字 tabular */
 .account-summary {
-  display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
-  padding: 12px 16px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-  margin-bottom: 16px;
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 28px;
+  padding: 14px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  margin-bottom: 18px;
 }
-.account-summary .sum-metric { display: flex; flex-direction: column; font-size: 13px; }
-.account-summary .sum-metric strong { font-variant-numeric: tabular-nums; }
+.account-summary.stale { border-color: var(--amber); }
+.account-summary .sum-metric { display: flex; flex-direction: column; gap: 2px; }
+.account-summary .sum-label { font-size: 11px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .03em; }
+.account-summary .sum-metric strong { font-size: 15px; font-variant-numeric: tabular-nums; color: var(--ink); }
+.account-summary .sum-id { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
+
+/* 使用者區塊標題 */
+.users-heading { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 12px; }
 
 .user-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 16px;
 }
 
 .user-card {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-  padding: 16px; display: flex; flex-direction: column; gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px;
+  display: flex; flex-direction: column; gap: 14px;
 }
 
 .user-card .uc-head { display: flex; justify-content: space-between; align-items: center; }
+.user-card .uc-head strong { font-size: 15px; }
 
 .range-toggle {
-  display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+  display: inline-flex; border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm); overflow: hidden;
 }
 .range-toggle button {
-  background: none; border: none; padding: 4px 10px; cursor: pointer;
-  font-size: 12px; color: var(--ink);
+  background: var(--surface); border: none; padding: 4px 11px; cursor: pointer;
+  font-size: 12px; color: var(--ink-2); transition: background .12s, color .12s;
 }
-.range-toggle button.active { background: var(--ink); color: #fff; }
+.range-toggle button + button { border-left: 1px solid var(--border); }
+.range-toggle button:hover { background: var(--surface-2); }
+.range-toggle button.active { background: var(--accent); color: var(--accent-ink); }
 
-.user-chart { display: flex; flex-direction: column; gap: 4px; }
-.user-chart canvas { width: 100%; }
-.chart-label { font-size: 11px; color: #71717a; }
+.uc-metrics { display: flex; gap: 24px; }
+.uc-metrics .m { display: flex; flex-direction: column; gap: 2px; }
+.uc-metrics .m-label { font-size: 11px; color: var(--ink-3); }
+.uc-metrics .m strong { font-size: 14px; font-variant-numeric: tabular-nums; }
 
-.uc-metrics { display: flex; gap: 16px; font-size: 13px; }
-.uc-metrics .m strong { font-variant-numeric: tabular-nums; }
+.user-chart { display: flex; flex-direction: column; gap: 5px; }
+.user-chart canvas { width: 100%; display: block; }
+.chart-label { font-size: 11px; color: var(--ink-3); }
 
-.uc-actions { display: flex; gap: 8px; }
+.uc-actions { display: flex; gap: 8px; margin-top: 2px; }
+.uc-actions .btn-secondary { font-size: 12px; padding: 5px 10px; }
+.uc-actions .btn-danger { color: var(--red); border-color: var(--border-strong); }
+.uc-actions .btn-danger:hover { border-color: var(--red); background: #fff5f5; }
 
 @media (max-width: 520px) {
   header { gap: 10px; }
