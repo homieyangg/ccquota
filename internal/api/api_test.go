@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -357,5 +358,268 @@ func TestEnrollScriptBadToken(t *testing.T) {
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("want 404, got %d", w.Code)
+	}
+}
+
+// ── 新的 session auth 測試 ──────────────────────────────────────────────────
+
+// loginAndGetCookie 呼叫 /api/auth/login 並回傳 Set-Cookie 值。
+func loginAndGetCookie(t *testing.T, h http.Handler, password string) (*http.Cookie, int) {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"password": password})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	resp := w.Result()
+	for _, c := range resp.Cookies() {
+		if c.Name == sessionCookieName {
+			return c, resp.StatusCode
+		}
+	}
+	return nil, resp.StatusCode
+}
+
+// TestAuthStatusOpen 確認 /api/auth/status 在無認證時仍回傳 200 (authed:false)。
+func TestAuthStatusOpen(t *testing.T) {
+	s := testStore(t)
+	h := New(s, &oauth.Client{}, 1800, "", "")
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp map[string]bool
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["authed"] {
+		t.Fatal("want authed=false, got true")
+	}
+}
+
+// TestAuthStatusWithBasicAuth 確認 Basic Auth 也讓 status 回傳 authed:true。
+func TestAuthStatusWithBasicAuth(t *testing.T) {
+	s := testStore(t)
+	h := New(s, &oauth.Client{}, 1800, "", "")
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
+	req.SetBasicAuth("admin", AdminPassword)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	var resp map[string]bool
+	json.NewDecoder(w.Body).Decode(&resp)
+	if !resp["authed"] {
+		t.Fatal("want authed=true with basic auth")
+	}
+}
+
+// TestLoginSetsSessionCookie 確認正確密碼登入後會拿到 session cookie。
+func TestLoginSetsSessionCookie(t *testing.T) {
+	s := testStore(t)
+	h := New(s, &oauth.Client{}, 1800, "", "")
+	cookie, code := loginAndGetCookie(t, h, AdminPassword)
+	if code != http.StatusOK {
+		t.Fatalf("want 200, got %d", code)
+	}
+	if cookie == nil {
+		t.Fatal("no session cookie in response")
+	}
+	if cookie.HttpOnly != true {
+		t.Error("cookie should be HttpOnly")
+	}
+}
+
+// TestCookieGrantsAccess 確認帶著合法 session cookie 可通過認證 gate。
+func TestCookieGrantsAccess(t *testing.T) {
+	s := testStore(t)
+	h := New(s, &oauth.Client{}, 1800, "", "")
+
+	// 先登入拿 cookie
+	cookie, code := loginAndGetCookie(t, h, AdminPassword)
+	if code != http.StatusOK {
+		t.Fatalf("login want 200, got %d", code)
+	}
+
+	// 用 cookie 打 /api/accounts
+	req := httptest.NewRequest(http.MethodGet, "/api/accounts", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 with cookie, got %d", w.Code)
+	}
+}
+
+// TestWrongPasswordReturns401 確認密碼錯誤回傳 401。
+func TestWrongPasswordReturns401(t *testing.T) {
+	s := testStore(t)
+	h := New(s, &oauth.Client{}, 1800, "", "")
+	_, code := loginAndGetCookie(t, h, "wrongpassword")
+	if code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", code)
+	}
+}
+
+// TestBasicAuthStillWorks 確認 Basic Auth 仍可通過認證 gate（向後相容）。
+func TestBasicAuthStillWorks(t *testing.T) {
+	s := testStore(t)
+	h := New(s, &oauth.Client{}, 1800, "", "")
+	req := httptest.NewRequest(http.MethodGet, "/api/accounts", nil)
+	req.SetBasicAuth("admin", AdminPassword)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200 with basic auth, got %d", w.Code)
+	}
+}
+
+// TestAuthStatusMustChange 確認 must_change 在 status 回傳中正確呈現。
+func TestAuthStatusMustChange(t *testing.T) {
+	s := testStore(t)
+	// bootstrap 設 must_change=1（auto-gen 情境：不設 CCQUOTA_ADMIN_PASSWORD）
+	os.Unsetenv("CCQUOTA_ADMIN_PASSWORD")
+	h := New(s, &oauth.Client{}, 1800, "", "")
+
+	// 未認證時 must_change 不應為 true
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp["must_change"].(bool) {
+		t.Fatal("want must_change=false when not authed")
+	}
+
+	// 登入後 must_change 應為 true（auto-gen 第一次登入）
+	cookie, code := loginAndGetCookie(t, h, AdminPassword)
+	if code != http.StatusOK {
+		t.Fatalf("login want 200, got %d", code)
+	}
+	req2 := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
+	req2.AddCookie(cookie)
+	w2 := httptest.NewRecorder()
+	h.ServeHTTP(w2, req2)
+	var resp2 map[string]any
+	json.NewDecoder(w2.Body).Decode(&resp2)
+	if !resp2["authed"].(bool) {
+		t.Fatal("want authed=true")
+	}
+	if !resp2["must_change"].(bool) {
+		t.Fatal("want must_change=true for auto-gen password")
+	}
+}
+
+// TestChangePasswordHappy 確認正確流程可以改密碼並清除 must_change。
+func TestChangePasswordHappy(t *testing.T) {
+	s := testStore(t)
+	os.Unsetenv("CCQUOTA_ADMIN_PASSWORD")
+	h := New(s, &oauth.Client{}, 1800, "", "")
+
+	// 登入
+	cookie, code := loginAndGetCookie(t, h, AdminPassword)
+	if code != http.StatusOK {
+		t.Fatalf("login want 200, got %d", code)
+	}
+
+	// 改密碼
+	body, _ := json.Marshal(map[string]string{"current": AdminPassword, "new": "newpass123"})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/change-password", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("change-password want 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// status 應顯示 must_change=false
+	req2 := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
+	req2.AddCookie(cookie)
+	w2 := httptest.NewRecorder()
+	h.ServeHTTP(w2, req2)
+	var resp map[string]any
+	json.NewDecoder(w2.Body).Decode(&resp)
+	if mc, _ := resp["must_change"].(bool); mc {
+		t.Fatal("want must_change=false after change")
+	}
+
+	// 舊密碼應失效
+	_, code2 := loginAndGetCookie(t, h, AdminPassword)
+	if code2 != http.StatusUnauthorized {
+		t.Fatalf("old password should fail, got %d", code2)
+	}
+
+	// 新密碼可以登入
+	_, code3 := loginAndGetCookie(t, h, "newpass123")
+	if code3 != http.StatusOK {
+		t.Fatalf("new password should work, got %d", code3)
+	}
+}
+
+// TestChangePasswordWrongCurrent 確認現有密碼錯誤回 401。
+func TestChangePasswordWrongCurrent(t *testing.T) {
+	s := testStore(t)
+	h := New(s, &oauth.Client{}, 1800, "", "")
+	cookie, _ := loginAndGetCookie(t, h, AdminPassword)
+
+	body, _ := json.Marshal(map[string]string{"current": "wrongpass", "new": "newpass123"})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/change-password", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", w.Code)
+	}
+}
+
+// TestChangePasswordWeakNew 確認新密碼太短回 400。
+func TestChangePasswordWeakNew(t *testing.T) {
+	s := testStore(t)
+	h := New(s, &oauth.Client{}, 1800, "", "")
+	cookie, _ := loginAndGetCookie(t, h, AdminPassword)
+
+	body, _ := json.Marshal(map[string]string{"current": AdminPassword, "new": "short"})
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/change-password", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", w.Code)
+	}
+}
+
+// TestLogoutClearsSession 確認登出後 session cookie 失效。
+func TestLogoutClearsSession(t *testing.T) {
+	s := testStore(t)
+	h := New(s, &oauth.Client{}, 1800, "", "")
+
+	// 先登入
+	cookie, code := loginAndGetCookie(t, h, AdminPassword)
+	if code != http.StatusOK {
+		t.Fatalf("login want 200, got %d", code)
+	}
+
+	// 登出
+	logoutReq := httptest.NewRequest(http.MethodPost, "/api/auth/logout",
+		strings.NewReader("{}"))
+	logoutReq.Header.Set("Content-Type", "application/json")
+	logoutReq.AddCookie(cookie)
+	wl := httptest.NewRecorder()
+	h.ServeHTTP(wl, logoutReq)
+	if wl.Code != http.StatusOK {
+		t.Fatalf("logout want 200, got %d", wl.Code)
+	}
+
+	// 再用原來的 cookie 打 /api/accounts 應該 401
+	req := httptest.NewRequest(http.MethodGet, "/api/accounts", nil)
+	req.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("after logout want 401, got %d", w.Code)
 	}
 }

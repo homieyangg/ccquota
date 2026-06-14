@@ -9,12 +9,12 @@ It polls the official OAuth usage endpoint, so your shared 7-day and 5-hour rate
 ## Run
 
 ```bash
-docker run -d -p 8080:8080 -v ccquota:/data \
+docker run -d -p 11451:11451 -v ccquota:/data \
   -e CCQUOTA_ADMIN_PASSWORD=pick-one \
   ghcr.io/homieyangg/ccquota
 ```
 
-Open `http://localhost:8080` and connect your Claude account.
+Open `http://localhost:11451` and connect your Claude account.
 
 ## Add a user (optional)
 

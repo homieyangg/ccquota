@@ -20,3 +20,7 @@
 
 # 設計文件不納入版控
 /docs/
+
+# impeccable 設計文件,不納入版控
+PRODUCT.md
+DESIGN.md

@@ -92,6 +92,15 @@ document.addEventListener('alpine:init', () => {
     // i18n
     lang: 'en',
     translations: {},
+    langOpen: false,
+
+    // 認證狀態
+    authed: false,
+    mustChange: false,
+    _lastLoginPassword: '',
+    loginPassword: '',
+    loginError: '',
+    loginBtnDisabled: false,
 
     // accounts
     accounts: [],
@@ -122,6 +131,21 @@ document.addEventListener('alpine:init', () => {
     // countdown timer handle
     _countdownHandle: null,
 
+    // settings modal
+    settingsCurPw: '',
+    settingsNewPw: '',
+    settingsConfirmPw: '',
+    settingsMsg: '',
+    settingsMsgType: '',
+    settingsBtnDisabled: false,
+
+    // must-change modal
+    mustChangeCurPw: '',
+    mustChangeNewPw: '',
+    mustChangeConfirmPw: '',
+    mustChangeMsg: '',
+    mustChangeBtnDisabled: false,
+
     // ── helpers ──────────────────────────────────────────────────────────────
 
     t(key) {
@@ -130,6 +154,7 @@ document.addEventListener('alpine:init', () => {
 
     async setLang(lang) {
       this.lang = lang;
+      this.langOpen = false;
       localStorage.setItem('ccquota_lang', lang);
       try {
         if (!i18nCache['en']) await loadLang('en');
@@ -138,6 +163,11 @@ document.addEventListener('alpine:init', () => {
         console.error('Failed to load language', lang, e);
         this.translations = i18nCache['en'] || {};
       }
+    },
+
+    langShortLabel(lang) {
+      const map = { 'en': 'EN', 'zh-TW': '繁中', 'zh-CN': '简中' };
+      return map[lang] || lang;
     },
 
     fmtPct(v) {
@@ -170,13 +200,141 @@ document.addEventListener('alpine:init', () => {
       return Math.min(v || 0, 100);
     },
 
+    // ── 認證 ──────────────────────────────────────────────────────────────────
+
+    async checkAuth() {
+      try {
+        const data = await apiGet('/api/auth/status');
+        this.authed = !!data.authed;
+        this.mustChange = !!data.must_change;
+      } catch (e) {
+        this.authed = false;
+        this.mustChange = false;
+      }
+    },
+
+    async doLogin() {
+      this.loginBtnDisabled = true;
+      this.loginError = '';
+      try {
+        await apiPost('/api/auth/login', { password: this.loginPassword });
+        this._lastLoginPassword = this.loginPassword;
+        this.loginPassword = '';
+        const status = await apiGet('/api/auth/status');
+        this.authed = !!status.authed;
+        this.mustChange = !!status.must_change;
+        if (this.mustChange) {
+          this.$nextTick(() => {
+            this.mustChangeCurPw = this._lastLoginPassword;
+            this.$refs.mustChangeDialog && this.$refs.mustChangeDialog.showModal();
+          });
+        } else {
+          await this.refreshAccounts();
+        }
+      } catch (e) {
+        this.loginError = this.t('login_error');
+      } finally {
+        this.loginBtnDisabled = false;
+      }
+    },
+
+    async doLogout() {
+      try {
+        await apiPost('/api/auth/logout', {});
+      } catch (e) {
+        // 忽略錯誤，強制回登入畫面
+      }
+      this.authed = false;
+      this.mustChange = false;
+      this._lastLoginPassword = '';
+      this.accounts = [];
+      this.lastUpdated = '';
+    },
+
+    // ── Settings modal ────────────────────────────────────────────────────────
+
+    openSettingsModal() {
+      this.settingsCurPw = '';
+      this.settingsNewPw = '';
+      this.settingsConfirmPw = '';
+      this.settingsMsg = '';
+      this.settingsMsgType = '';
+      this.settingsBtnDisabled = false;
+      this.$refs.settingsDialog && this.$refs.settingsDialog.showModal();
+    },
+
+    closeSettingsModal() {
+      this.$refs.settingsDialog && this.$refs.settingsDialog.close();
+    },
+
+    async doChangePassword() {
+      this.settingsMsg = '';
+      this.settingsMsgType = '';
+      if (this.settingsNewPw !== this.settingsConfirmPw) {
+        this.settingsMsg = this.t('password_mismatch');
+        this.settingsMsgType = 'error';
+        return;
+      }
+      if (this.settingsNewPw.length < 8) {
+        this.settingsMsg = this.t('password_too_short');
+        this.settingsMsgType = 'error';
+        return;
+      }
+      this.settingsBtnDisabled = true;
+      try {
+        await apiPost('/api/auth/change-password', {
+          current: this.settingsCurPw,
+          new: this.settingsNewPw,
+        });
+        this.settingsMsg = this.t('password_changed');
+        this.settingsMsgType = 'success';
+        this.settingsCurPw = '';
+        this.settingsNewPw = '';
+        this.settingsConfirmPw = '';
+      } catch (e) {
+        this.settingsMsg = e.message;
+        this.settingsMsgType = 'error';
+      } finally {
+        this.settingsBtnDisabled = false;
+      }
+    },
+
+    // ── Must-change modal (non-dismissible) ───────────────────────────────────
+
+    async doMustChangePassword() {
+      this.mustChangeMsg = '';
+      if (this.mustChangeNewPw !== this.mustChangeConfirmPw) {
+        this.mustChangeMsg = this.t('password_mismatch');
+        return;
+      }
+      if (this.mustChangeNewPw.length < 8) {
+        this.mustChangeMsg = this.t('password_too_short');
+        return;
+      }
+      this.mustChangeBtnDisabled = true;
+      try {
+        await apiPost('/api/auth/change-password', {
+          current: this.mustChangeCurPw,
+          new: this.mustChangeNewPw,
+        });
+        this.mustChange = false;
+        this._lastLoginPassword = '';
+        this.$refs.mustChangeDialog && this.$refs.mustChangeDialog.close();
+        await this.refreshAccounts();
+      } catch (e) {
+        this.mustChangeMsg = e.message;
+      } finally {
+        this.mustChangeBtnDisabled = false;
+      }
+    },
+
     // ── API ───────────────────────────────────────────────────────────────────
 
     async refreshAccounts() {
       try {
         const data = await apiGet('/api/accounts');
         this.accounts = data;
-        this.lastUpdated = this.t('last_updated') + ' ' + new Date().toLocaleTimeString();
+        this.lastUpdated = new Date().toLocaleTimeString();
         // 預設選第一個帳號（若尚未選取）
         if (data.length > 0 && !this.enrollAccount) {
           this.enrollAccount = data[0].id;
@@ -216,6 +374,40 @@ document.addEventListener('alpine:init', () => {
       for (const a of this.accounts) {
         if (a.has_reading) this._drawSparkline(a.id);
       }
+    },
+
+    // ── Modal helpers ─────────────────────────────────────────────────────────
+
+    openConnectModal() {
+      this.$refs.connectDialog.showModal();
+    },
+
+    closeConnectModal() {
+      this.$refs.connectDialog.close();
+      // 重置 connect 暫態
+      this.connectId = '';
+      this.connectLabel = '';
+      this.oauthCode = '';
+      this.authorizeUrl = '';
+      this.loginId = null;
+      this.showOauthFlow = false;
+      this.connectMsg = '';
+      this.connectMsgType = '';
+      this.startBtnDisabled = false;
+    },
+
+    openEnrollModal() {
+      this.$refs.enrollDialog.showModal();
+    },
+
+    closeEnrollModal() {
+      this.$refs.enrollDialog.close();
+      // 重置 enroll 暫態
+      this.enrollUser = '';
+      this.enrollOneliner = '';
+      this.enrollMsg = '';
+      this.enrollMsgType = '';
+      this.enrollBtnDisabled = false;
     },
 
     // ── Enrollment flow ───────────────────────────────────────────────────────
@@ -292,6 +484,8 @@ document.addEventListener('alpine:init', () => {
         this.oauthCode = '';
         this.loginId = null;
         await this.refreshAccounts();
+        // 成功後關閉 modal
+        this.$nextTick(() => this.closeConnectModal());
       } catch (e) {
         this.connectMsg = this.t('connect_error') + ' ' + e.message;
         this.connectMsgType = 'error';
@@ -310,11 +504,23 @@ document.addEventListener('alpine:init', () => {
         this.translations = i18nCache['en'] || {};
       }
 
-      // initial load
-      await this.refreshAccounts();
+      // 檢查認證狀態
+      await this.checkAuth();
 
-      // poll every 30s
-      setInterval(() => this.refreshAccounts(), 30000);
+      if (this.authed) {
+        if (this.mustChange) {
+          this.$nextTick(() => {
+            this.$refs.mustChangeDialog && this.$refs.mustChangeDialog.showModal();
+          });
+        } else {
+          await this.refreshAccounts();
+        }
+      }
+
+      // poll every 30s（只在已認證時抓資料）
+      setInterval(async () => {
+        if (this.authed) await this.refreshAccounts();
+      }, 30000);
 
       // countdown tick every second
       this._countdownHandle = setInterval(() => {

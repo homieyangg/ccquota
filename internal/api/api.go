@@ -1,7 +1,9 @@
 package api
 
 import (
+	"crypto/pbkdf2"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
@@ -21,7 +23,17 @@ import (
 	"github.com/ccquota/ccquota/internal/store"
 )
 
-// AdminPassword is the HTTP Basic Auth password in use (may be auto-generated).
+const (
+	pbkdf2Iter   = 100000
+	pbkdf2KeyLen = 32
+	saltLen      = 16
+	settingHash  = "admin_password_hash"
+	settingSalt  = "admin_password_salt"
+	settingMust  = "admin_must_change"
+)
+
+// AdminPassword 是啟動時使用的明文密碼（僅用於 bootstrap）。
+// 若 CCQUOTA_ADMIN_PASSWORD 已設定則為其值；否則為自動產生值（會被 log）。
 var AdminPassword string
 
 func init() {
@@ -31,6 +43,87 @@ func init() {
 		rand.Read(b)
 		AdminPassword = hex.EncodeToString(b)
 	}
+}
+
+// hashPassword 使用 PBKDF2-SHA256 對密碼做 hash，回傳 hexHash 和 hexSalt。
+func hashPassword(password string) (hexHash, hexSalt string, err error) {
+	salt := make([]byte, saltLen)
+	if _, err = rand.Read(salt); err != nil {
+		return "", "", err
+	}
+	key, err := pbkdf2.Key(sha256.New, password, salt, pbkdf2Iter, pbkdf2KeyLen)
+	if err != nil {
+		return "", "", err
+	}
+	return hex.EncodeToString(key), hex.EncodeToString(salt), nil
+}
+
+// verifyPassword 以 constant-time 驗證密碼是否符合儲存的 hash。
+func verifyPassword(password, hexHash, hexSalt string) bool {
+	salt, err := hex.DecodeString(hexSalt)
+	if err != nil {
+		return false
+	}
+	expectedKey, err := hex.DecodeString(hexHash)
+	if err != nil {
+		return false
+	}
+	key, err := pbkdf2.Key(sha256.New, password, salt, pbkdf2Iter, pbkdf2KeyLen)
+	if err != nil {
+		return false
+	}
+	return subtle.ConstantTimeCompare(key, expectedKey) == 1
+}
+
+// bootstrapPassword 在 store 中尚無 hash 時，依 env 設定做初始化。
+// 若 CCQUOTA_ADMIN_PASSWORD 有設定 → 存 hash，must_change=0。
+// 否則（自動產生）→ 存 hash，must_change=1。
+func bootstrapPassword(s *store.Store) error {
+	_, ok, err := s.GetSetting(settingHash)
+	if err != nil {
+		return err
+	}
+	if ok {
+		// 已有 hash，不覆蓋
+		return nil
+	}
+	mustChange := "0"
+	if os.Getenv("CCQUOTA_ADMIN_PASSWORD") == "" {
+		mustChange = "1"
+	}
+	h, salt, err := hashPassword(AdminPassword)
+	if err != nil {
+		return err
+	}
+	if err := s.SetSetting(settingHash, h); err != nil {
+		return err
+	}
+	if err := s.SetSetting(settingSalt, salt); err != nil {
+		return err
+	}
+	return s.SetSetting(settingMust, mustChange)
+}
+
+// checkStoredPassword 從 store 讀出 hash/salt 並驗證密碼。
+func checkStoredPassword(s *store.Store, password string) bool {
+	h, ok, err := s.GetSetting(settingHash)
+	if err != nil || !ok {
+		return false
+	}
+	salt, ok, err := s.GetSetting(settingSalt)
+	if err != nil || !ok {
+		return false
+	}
+	return verifyPassword(password, h, salt)
+}
+
+// mustChangeFlag 讀取 admin_must_change 設定；預設 false。
+func mustChangeFlag(s *store.Store) bool {
+	v, ok, err := s.GetSetting(settingMust)
+	if err != nil || !ok {
+		return false
+	}
+	return v == "1"
 }
 
 type pendingLogin struct {
@@ -54,6 +147,12 @@ type handler struct {
 // ingestToken 為 /v1/metrics 的 Bearer token（空字串 = 關閉 enroll 功能）。
 // publicURL 為對外 URL（空字串時從 request 自動推導）。
 func New(s *store.Store, oc *oauth.Client, staleSec int64, ingestToken, publicURL string) http.Handler {
+	// 啟動時 bootstrap 密碼 hash（若尚未存過）
+	if err := bootstrapPassword(s); err != nil {
+		// 非致命，但要 log
+		fmt.Fprintf(os.Stderr, "ccquota: bootstrap password: %v\n", err)
+	}
+
 	h := &handler{
 		s:           s,
 		oc:          oc,
@@ -66,11 +165,17 @@ func New(s *store.Store, oc *oauth.Client, staleSec int64, ingestToken, publicUR
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	})
-	mux.Handle("/api/accounts", basicAuth(http.HandlerFunc(h.handleAccounts)))
-	mux.Handle("/api/history", basicAuth(http.HandlerFunc(h.handleHistory)))
-	mux.Handle("/api/login/start", basicAuth(http.HandlerFunc(h.handleLoginStart)))
-	mux.Handle("/api/login/complete", basicAuth(http.HandlerFunc(h.handleLoginComplete)))
-	mux.Handle("/api/enroll", basicAuth(http.HandlerFunc(h.handleEnroll)))
+	// 管理員認證端點（不需要 gate）
+	mux.HandleFunc("/api/auth/login", h.handleAuthLogin)
+	mux.HandleFunc("/api/auth/logout", h.handleAuthLogout)
+	mux.HandleFunc("/api/auth/status", h.handleAuthStatus)
+	// 以下路由需要 admin 認證（session cookie 或 Basic Auth）
+	mux.Handle("/api/accounts", adminAuth(s, http.HandlerFunc(h.handleAccounts)))
+	mux.Handle("/api/history", adminAuth(s, http.HandlerFunc(h.handleHistory)))
+	mux.Handle("/api/login/start", adminAuth(s, http.HandlerFunc(h.handleLoginStart)))
+	mux.Handle("/api/login/complete", adminAuth(s, http.HandlerFunc(h.handleLoginComplete)))
+	mux.Handle("/api/enroll", adminAuth(s, http.HandlerFunc(h.handleEnroll)))
+	mux.Handle("/api/auth/change-password", adminAuth(s, http.HandlerFunc(h.handleChangePassword)))
 	// /e/<token>: enrollment script，不需要 admin auth
 	mux.HandleFunc("/e/", h.handleEnrollScript)
 	return mux
@@ -96,17 +201,141 @@ func (h *handler) baseURL(r *http.Request) string {
 	return scheme + "://" + r.Host
 }
 
-func basicAuth(next http.Handler) http.Handler {
+// adminAuth 是管理員認證 middleware，接受 session cookie 或 Basic Auth 其中之一。
+// 密碼驗證優先使用 store 中的 hash；hash 不存在時退回比對 AdminPassword（容錯）。
+func adminAuth(s *store.Store, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, pass, ok := r.BasicAuth()
-		if !ok || subtle.ConstantTimeCompare([]byte(pass), []byte(AdminPassword)) != 1 {
-			w.Header().Set("WWW-Authenticate", `Basic realm="ccquota"`)
-			w.WriteHeader(http.StatusUnauthorized)
-			json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+		if hasValidSession(r) {
+			next.ServeHTTP(w, r)
 			return
 		}
-		next.ServeHTTP(w, r)
+		_, pass, ok := r.BasicAuth()
+		if ok && checkStoredPassword(s, pass) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("WWW-Authenticate", `Basic realm="ccquota"`)
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
 	})
+}
+
+// authLoginReq 是 POST /api/auth/login 的請求結構。
+type authLoginReq struct {
+	Password string `json:"password"`
+}
+
+// handleAuthLogin 處理管理員登入，成功後設置 session cookie。
+func (h *handler) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req authLoginReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if !checkStoredPassword(h.s, req.Password) {
+		jsonError(w, "invalid password", http.StatusUnauthorized)
+		return
+	}
+	token, err := globalSessions.create()
+	if err != nil {
+		jsonError(w, "session error", http.StatusInternalServerError)
+		return
+	}
+	setSessionCookie(w, r, token)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// handleAuthLogout 清除 session cookie 並刪除 session。
+func (h *handler) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if c, err := r.Cookie(sessionCookieName); err == nil {
+		globalSessions.delete(c.Value)
+	}
+	clearSessionCookie(w, r)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// handleAuthStatus 回傳目前是否已認證，以及是否需要強制改密碼。
+func (h *handler) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	authed := false
+	if hasValidSession(r) {
+		authed = true
+	} else if _, pass, ok := r.BasicAuth(); ok {
+		if checkStoredPassword(h.s, pass) {
+			authed = true
+		}
+	}
+	mustChange := false
+	if authed {
+		mustChange = mustChangeFlag(h.s)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"authed":      authed,
+		"must_change": mustChange,
+	})
+}
+
+// changePasswordReq 是 POST /api/auth/change-password 的請求結構。
+type changePasswordReq struct {
+	Current string `json:"current"`
+	New     string `json:"new"`
+}
+
+// handleChangePassword 讓已認證的 admin 變更密碼。
+func (h *handler) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req changePasswordReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	// 驗證現有密碼
+	if !checkStoredPassword(h.s, req.Current) {
+		jsonError(w, "current password is incorrect", http.StatusUnauthorized)
+		return
+	}
+	// 驗證新密碼規則：長度 >= 8，且不能與舊密碼相同
+	if len(req.New) < 8 {
+		jsonError(w, "new password must be at least 8 characters", http.StatusBadRequest)
+		return
+	}
+	if req.New == req.Current {
+		jsonError(w, "new password must differ from current password", http.StatusBadRequest)
+		return
+	}
+	// 產生新的 hash 並儲存
+	h2, salt, err := hashPassword(req.New)
+	if err != nil {
+		jsonError(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if err := h.s.SetSetting(settingHash, h2); err != nil {
+		jsonError(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	if err := h.s.SetSetting(settingSalt, salt); err != nil {
+		jsonError(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	if err := h.s.SetSetting(settingMust, "0"); err != nil {
+		jsonError(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
 // userCostResp 代表單一使用者的成本明細。

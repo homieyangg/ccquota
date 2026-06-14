@@ -168,7 +168,7 @@ func buildPoller(s *store.Store, n *alert.Notifier) *poller.Poller {
 
 func runServe(s *store.Store) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	addr := fs.String("addr", ":8080", "HTTP listen address")
+	addr := fs.String("addr", ":11451", "HTTP listen address")
 	interval := fs.Duration("interval", 5*time.Minute, "poll interval (>=180s)")
 	fs.Parse(os.Args[2:])
 	if *interval < 180*time.Second {

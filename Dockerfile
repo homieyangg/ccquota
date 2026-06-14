@@ -26,7 +26,7 @@ ENV CCQUOTA_DB=/data/ccquota.db
 
 VOLUME /data
 
-EXPOSE 8080
+EXPOSE 11451
 
 ENTRYPOINT ["/ccquota"]
-CMD ["serve", "--addr", ":8080"]
+CMD ["serve", "--addr", ":11451"]

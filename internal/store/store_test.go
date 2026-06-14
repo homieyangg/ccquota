@@ -203,6 +203,47 @@ func TestUserCostRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSettingsRoundTrip(t *testing.T) {
+	s, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	// 不存在時 ok=false
+	_, ok, err := s.GetSetting("admin_password_hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ok {
+		t.Fatal("expected ok=false for missing key")
+	}
+
+	// 寫入後可讀回
+	if err := s.SetSetting("admin_password_hash", "hexhash"); err != nil {
+		t.Fatal(err)
+	}
+	val, ok, err := s.GetSetting("admin_password_hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok {
+		t.Fatal("expected ok=true after set")
+	}
+	if val != "hexhash" {
+		t.Fatalf("want 'hexhash', got %q", val)
+	}
+
+	// 覆蓋同一 key
+	if err := s.SetSetting("admin_password_hash", "newhash"); err != nil {
+		t.Fatal(err)
+	}
+	val2, _, _ := s.GetSetting("admin_password_hash")
+	if val2 != "newhash" {
+		t.Fatalf("after override: want 'newhash', got %q", val2)
+	}
+}
+
 func TestEnrollmentRoundTrip(t *testing.T) {
 	s, err := Open(":memory:")
 	if err != nil {

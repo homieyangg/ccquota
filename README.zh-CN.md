@@ -9,12 +9,12 @@
 ## 跑起来
 
 ```bash
-docker run -d -p 8080:8080 -v ccquota:/data \
+docker run -d -p 11451:11451 -v ccquota:/data \
   -e CCQUOTA_ADMIN_PASSWORD=pick-one \
   ghcr.io/homieyangg/ccquota
 ```
 
-打开 `http://localhost:8080`，连接你的 Claude 账号。
+打开 `http://localhost:11451`，连接你的 Claude 账号。
 
 ## 加人（可选）
 

@@ -85,7 +85,33 @@ CREATE TABLE IF NOT EXISTS enrollments (
   user TEXT NOT NULL,
   expires_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `)
+	return err
+}
+
+// GetSetting 讀取 key 對應的設定值；ok=false 表示不存在。
+func (s *Store) GetSetting(key string) (value string, ok bool, err error) {
+	row := s.db.QueryRow(`SELECT value FROM settings WHERE key=?`, key)
+	if e := row.Scan(&value); e != nil {
+		if e == sql.ErrNoRows {
+			return "", false, nil
+		}
+		return "", false, e
+	}
+	return value, true, nil
+}
+
+// SetSetting 寫入或覆蓋一個設定值。
+func (s *Store) SetSetting(key, value string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO settings (key, value) VALUES (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+		key, value,
+	)
 	return err
 }
 
