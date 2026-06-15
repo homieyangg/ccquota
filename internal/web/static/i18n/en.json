@@ -93,6 +93,7 @@
   "user_period_cost": "Cost this period",
   "user_period_tokens": "Tokens this period",
   "user_share": "Share",
+  "user_budget_usage": "Budget usage",
   "copy_install": "Copy install link",
   "copied": "Copied",
   "delete_user": "Delete user",
