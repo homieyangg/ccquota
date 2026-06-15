@@ -122,6 +122,55 @@ func TestPerUserBudget(t *testing.T) {
 	}
 }
 
+func TestTokenSharePct(t *testing.T) {
+	tests := []struct {
+		name        string
+		userTokens  int64
+		totalTokens int64
+		want        float64
+	}{
+		{
+			name:        "正常：270M / 288M ≈ 93.8%",
+			userTokens:  270083820,
+			totalTokens: 270083820 + 17844745,
+			want:        93.8023707,
+		},
+		{
+			name:        "另一半：17.8M / 288M ≈ 6.2%（與上一筆相加=100%）",
+			userTokens:  17844745,
+			totalTokens: 270083820 + 17844745,
+			want:        6.1976293,
+		},
+		{
+			name:        "獨佔 -> 100%",
+			userTokens:  500,
+			totalTokens: 500,
+			want:        100,
+		},
+		{
+			name:        "總量為 0 -> 回傳 0（避免除以零）",
+			userTokens:  0,
+			totalTokens: 0,
+			want:        0,
+		},
+		{
+			name:        "零用量 -> 0%",
+			userTokens:  0,
+			totalTokens: 1000,
+			want:        0,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := calc.TokenSharePct(tc.userTokens, tc.totalTokens)
+			if math.Abs(got-tc.want) > 1e-4 {
+				t.Errorf("TokenSharePct(%v, %v) = %v, want %v",
+					tc.userTokens, tc.totalTokens, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSharePct(t *testing.T) {
 	tests := []struct {
 		name          string

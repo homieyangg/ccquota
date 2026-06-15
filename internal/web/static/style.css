@@ -571,6 +571,13 @@ button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.1
 .uc-sub { display: flex; gap: 20px; font-size: 13px; color: var(--ink-2); }
 .uc-sub strong { color: var(--ink); font-variant-numeric: tabular-nums; }
 .uc-sub-label { color: var(--ink-3); margin-left: 4px; }
+.uc-budget { display: flex; align-items: baseline; gap: 6px; font-size: 13px; margin-top: 3px; }
+.uc-budget .uc-sub-label { margin-left: 0; }
+.uc-budget-pct { font-variant-numeric: tabular-nums; font-weight: 600; }
+.uc-budget-pct.fill-green { color: var(--green); background: none; }
+.uc-budget-pct.fill-yellow { color: var(--amber); background: none; }
+.uc-budget-pct.fill-red { color: var(--red); background: none; }
+.share-fill.fill-share { background: var(--accent); }
 .share-bar { height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; }
 .share-fill { height: 100%; border-radius: 3px; transition: width .3s ease; }
 

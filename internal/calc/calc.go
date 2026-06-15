@@ -22,11 +22,20 @@ func PerUserBudget(weeklyBudget float64, userCount int) float64 {
 	return weeklyBudget / float64(userCount)
 }
 
-// SharePct 計算使用者成本佔每人份額的百分比。
+// SharePct 計算使用者成本佔每人份額的百分比（額度使用率）。
 // perUserBudget 為 0 時回傳 0（避免除以零）。
 func SharePct(userCostUSD, perUserBudget float64) float64 {
 	if perUserBudget > 0 {
 		return userCostUSD / perUserBudget * 100
+	}
+	return 0
+}
+
+// TokenSharePct 計算使用者 token 佔全體 token 的百分比。
+// 全體所有使用者的佔比加總為 100%。totalTokens 為 0 時回傳 0。
+func TokenSharePct(userTokens, totalTokens int64) float64 {
+	if totalTokens > 0 {
+		return float64(userTokens) / float64(totalTokens) * 100
 	}
 	return 0
 }

@@ -187,17 +187,22 @@
                       </div>
                     </div>
 
-                    <!-- 數字摘要:本期費用為主,token / 佔比為次 -->
+                    <!-- 費用區:本期費用 + 額度使用率(花費 vs 人均週額度,可超過 100%) -->
                     <div class="uc-hero">
                       <span class="uc-hero-num" x-text="'$' + u.cost_usd.toFixed(2)"></span>
                       <span class="uc-hero-label" x-text="t('user_period_cost')"></span>
                     </div>
+                    <div class="uc-budget">
+                      <span class="uc-sub-label" x-text="t('user_budget_usage')"></span>
+                      <strong :class="'uc-budget-pct ' + fillClass(u.share_pct)" x-text="u.share_pct.toFixed(1) + '%'"></strong>
+                    </div>
+                    <!-- token 區:本期 token + 佔比(占全體 token,加總 100%) -->
                     <div class="uc-sub">
                       <span><strong x-text="u.tokens.toLocaleString()"></strong><span class="uc-sub-label" x-text="t('user_period_tokens')"></span></span>
-                      <span><strong x-text="u.share_pct.toFixed(1) + '%'"></strong><span class="uc-sub-label" x-text="t('user_share')"></span></span>
+                      <span><strong x-text="u.token_share_pct.toFixed(1) + '%'"></strong><span class="uc-sub-label" x-text="t('user_share')"></span></span>
                     </div>
-                    <div class="share-bar" :title="u.share_pct.toFixed(1) + '%'">
-                      <div class="share-fill" :class="fillClass(u.share_pct)" :style="'width:' + Math.min(u.share_pct, 100) + '%'"></div>
+                    <div class="share-bar" :title="u.token_share_pct.toFixed(1) + '%'">
+                      <div class="share-fill fill-share" :style="'width:' + Math.min(u.token_share_pct, 100) + '%'"></div>
                     </div>
 
                     <!-- 費用趨勢圖 -->

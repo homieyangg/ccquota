@@ -364,11 +364,13 @@ func (h *handler) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 }
 
 // userCostResp 代表單一使用者的成本明細。
+// SharePct 是額度使用率（花費 ÷ 人均週額度）；TokenSharePct 是 token 佔全體的比例（加總 100%）。
 type userCostResp struct {
-	User     string  `json:"user"`
-	CostUSD  float64 `json:"cost_usd"`
-	Tokens   int64   `json:"tokens"`
-	SharePct float64 `json:"share_pct"`
+	User          string  `json:"user"`
+	CostUSD       float64 `json:"cost_usd"`
+	Tokens        int64   `json:"tokens"`
+	SharePct      float64 `json:"share_pct"`
+	TokenSharePct float64 `json:"token_share_pct"`
 }
 
 // costResp 代表帳號期間成本與反推週額度資訊。
@@ -479,14 +481,21 @@ func (h *handler) buildCost(accountID string, sinceTS int64, reading store.Readi
 	}
 	perUserBudget := calc.PerUserBudget(weeklyBudget, userCount)
 
+	// token 佔比的分母：全體使用者 token 總和。
+	var totalTokens int64
+	for _, uc := range userCosts {
+		totalTokens += uc.Tokens
+	}
+
 	// 建立 user 清單，依 cost 降序排列。
 	users := make([]userCostResp, 0, len(userCosts))
 	for u, uc := range userCosts {
 		users = append(users, userCostResp{
-			User:     u,
-			CostUSD:  uc.Cost,
-			Tokens:   uc.Tokens,
-			SharePct: calc.SharePct(uc.Cost, perUserBudget),
+			User:          u,
+			CostUSD:       uc.Cost,
+			Tokens:        uc.Tokens,
+			SharePct:      calc.SharePct(uc.Cost, perUserBudget),
+			TokenSharePct: calc.TokenSharePct(uc.Tokens, totalTokens),
 		})
 	}
 	sort.Slice(users, func(i, j int) bool {

@@ -93,6 +93,7 @@
   "user_period_cost": "本期费用",
   "user_period_tokens": "本期 token",
   "user_share": "占比",
+  "user_budget_usage": "额度使用率",
   "copy_install": "复制安装链接",
   "copied": "已复制",
   "delete_user": "删除用户",
