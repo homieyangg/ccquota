@@ -265,6 +265,8 @@ func loadCipher() *secret.Cipher {
 	if err != nil {
 		log.Fatalf("init cipher: %v", err)
 	}
+	// 用同一把持久化金鑰簽 session,讓 session 跨重啟/自我更新存活
+	apipkg.SetSessionSecret(key)
 	return c
 }
 

@@ -238,7 +238,8 @@ func adminAuth(s *store.Store, next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		w.Header().Set("WWW-Authenticate", `Basic realm="ccquota"`)
+		// 不送 WWW-Authenticate:否則瀏覽器會跳原生 Basic Auth 彈窗。
+		// curl -u 仍可用(它會預先帶 Authorization header,不需要伺服器宣告)。
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
 	})
