@@ -70,6 +70,8 @@ bash <(curl -fsSL -A ccquota-setup https://your-host/e/TOKEN)
 
 One link works on all of that person's machines; usage merges under the same name. The client reports cost over Claude Code's native OpenTelemetry export.
 
+After enrolling, your Claude Code statusline shows the account quota: 5h:23% 7d:59% me:80%.
+
 ## Configuration
 
 | Env | Default | What it does |
