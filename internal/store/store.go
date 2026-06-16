@@ -17,7 +17,8 @@ type Account struct {
 	Label        string
 	AccessToken  string
 	RefreshToken string
-	ExpiresAt    int64 // unix seconds
+	ExpiresAt    int64  // unix seconds
+	CredsPath    string // 非空 = CLI-backed:poller 從此 claude creds 檔讀 token,不自行 refresh-token-endpoint
 }
 
 // dsn 組裝 SQLite DSN，附加 busy_timeout pragma（5 秒）以避免並行寫入立即報錯。
@@ -106,7 +107,16 @@ CREATE TABLE IF NOT EXISTS channels (
   created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
 );
 `)
-	return err
+	if err != nil {
+		return err
+	}
+	// 累加式欄位(舊 DB 升級):creds_path 用於 CLI-backed 帳號(poller 直接讀本機
+	// claude CLI 的 creds 檔取 token、快到期時觸發 refresh)。欄位已存在則忽略錯誤。
+	if _, e := s.db.Exec(`ALTER TABLE accounts ADD COLUMN creds_path TEXT NOT NULL DEFAULT ''`); e != nil &&
+		!strings.Contains(e.Error(), "duplicate column") {
+		return e
+	}
+	return nil
 }
 
 // GetSetting 讀取 key 對應的設定值；ok=false 表示不存在。
@@ -181,24 +191,25 @@ func (s *Store) AccountPeriodCost(accountID string, sinceTS int64) (float64, err
 
 func (s *Store) UpsertAccount(a Account) error {
 	_, err := s.db.Exec(`
-INSERT INTO accounts (id,label,access_token,refresh_token,expires_at)
-VALUES (?,?,?,?,?)
+INSERT INTO accounts (id,label,access_token,refresh_token,expires_at,creds_path)
+VALUES (?,?,?,?,?,?)
 ON CONFLICT(id) DO UPDATE SET
   label=excluded.label, access_token=excluded.access_token,
-  refresh_token=excluded.refresh_token, expires_at=excluded.expires_at`,
-		a.ID, a.Label, a.AccessToken, a.RefreshToken, a.ExpiresAt)
+  refresh_token=excluded.refresh_token, expires_at=excluded.expires_at,
+  creds_path=excluded.creds_path`,
+		a.ID, a.Label, a.AccessToken, a.RefreshToken, a.ExpiresAt, a.CredsPath)
 	return err
 }
 
 func (s *Store) GetAccount(id string) (Account, error) {
 	var a Account
-	err := s.db.QueryRow(`SELECT id,label,access_token,refresh_token,expires_at FROM accounts WHERE id=?`, id).
-		Scan(&a.ID, &a.Label, &a.AccessToken, &a.RefreshToken, &a.ExpiresAt)
+	err := s.db.QueryRow(`SELECT id,label,access_token,refresh_token,expires_at,creds_path FROM accounts WHERE id=?`, id).
+		Scan(&a.ID, &a.Label, &a.AccessToken, &a.RefreshToken, &a.ExpiresAt, &a.CredsPath)
 	return a, err
 }
 
 func (s *Store) ListAccounts() ([]Account, error) {
-	rows, err := s.db.Query(`SELECT id,label,access_token,refresh_token,expires_at FROM accounts ORDER BY id`)
+	rows, err := s.db.Query(`SELECT id,label,access_token,refresh_token,expires_at,creds_path FROM accounts ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +217,7 @@ func (s *Store) ListAccounts() ([]Account, error) {
 	var out []Account
 	for rows.Next() {
 		var a Account
-		if err := rows.Scan(&a.ID, &a.Label, &a.AccessToken, &a.RefreshToken, &a.ExpiresAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Label, &a.AccessToken, &a.RefreshToken, &a.ExpiresAt, &a.CredsPath); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
