@@ -7,7 +7,7 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 fail=0
 chk() { # 名稱 期望子字串 實際
-  if printf '%s' "$3" | grep -q -- "$2"; then echo "ok  - $1"; else echo "FAIL- $1: 期望含 '$2',得到 '$3'"; fail=1; fi
+  if printf '%s' "$3" | grep -Fq -- "$2"; then echo "ok  - $1"; else echo "FAIL- $1: 期望含 '$2',得到 '$3'"; fail=1; fi
 }
 
 # 綠色:5h/7d/share 都低於門檻
@@ -25,7 +25,7 @@ chk "7d 紅"   $'\033[31m' "$out"
 # 無 reading(5h/7d null) → 不應出現 5h:
 rm -f "$TMP/quota.cache"
 out=$(CCQUOTA_DIR="$TMP" CCQUOTA_QUOTA_JSON='{"five_hour":null,"seven_day":null,"share_pct":null,"thresholds":{"five_hour_crit":95,"seven_day_warn":75,"seven_day_crit":90,"user_share_warn":150,"user_share_crit":250}}' bash "$SL")
-if printf '%s' "$out" | grep -q "5h:"; then echo "FAIL- null 不該有 5h: '$out'"; fail=1; else echo "ok  - null 無 5h"; fi
+if printf '%s' "$out" | grep -Fq "5h:"; then echo "FAIL- null 不該有 5h: '$out'"; fail=1; else echo "ok  - null 無 5h"; fi
 
 # 壞 JSON → 佔位
 rm -f "$TMP/quota.cache"
