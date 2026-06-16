@@ -1,7 +1,6 @@
 package ingest
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -31,14 +30,7 @@ func NewUsageHandler(s *store.Store, token string, onReset func(accountID string
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if len(tok) == 0 {
-			http.Error(w, "ingest disabled", http.StatusUnauthorized)
-			return
-		}
-		const prefix = "Bearer "
-		bearer := r.Header.Get("Authorization")
-		if len(bearer) <= len(prefix) ||
-			subtle.ConstantTimeCompare([]byte(bearer[len(prefix):]), tok) != 1 {
+		if !bearerOK(tok, r) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}

@@ -421,8 +421,10 @@ func runServe(s *store.Store) {
 		log.Printf("ingest: disabled (CCQUOTA_INGEST_TOKEN not set)")
 	}
 	mux.Handle("/v1/metrics", ingest.New(s, ingestToken))
-	// 外部推送 7d/5h 用量（client 讀現成 token 打 usage endpoint 後 POST 回來），
-	// server 自身不碰被限流的 token endpoint。
+	// client 讀本機現成 access token 後推回來,server 用它統一輪詢 usage
+	// (每帳號每週期一次,不會 N 倍 429),且永不碰被限流的 token endpoint。
+	mux.Handle("/v1/token", ingest.NewTokenHandler(s, ingestToken))
+	// 備用:client 也可改自行打 usage、只推結果%(token 不離開本機)。
 	mux.Handle("/v1/usage", ingest.NewUsageHandler(s, ingestToken, resetCallback(s, cipher)))
 
 	mux.Handle("/", web.Handler())
@@ -438,8 +440,9 @@ func runServe(s *store.Store) {
 	log.Fatal(srv.ListenAndServe())
 }
 
-// runDetach 把帳號切成「外部餵入」模式：清掉 refresh token，poller 之後就不再
-// 自行 refresh/poll（避開被限流的 token endpoint），改由 POST /v1/usage 餵 7d/5h。
+// runDetach 把帳號切成「client 餵 token」模式：清掉 refresh token，poller 之後就
+// 不再自行 refresh（避開被限流的 token endpoint）。保留 access token，client 會用
+// POST /v1/token 持續餵新的,server 照常用它輪詢 usage。
 func runDetach(s *store.Store) {
 	fs := flag.NewFlagSet("detach", flag.ExitOnError)
 	id := fs.String("id", "", "account id")
@@ -452,11 +455,10 @@ func runDetach(s *store.Store) {
 		log.Fatalf("detach: account %s: %v", *id, err)
 	}
 	a.RefreshToken = ""
-	a.AccessToken = ""
 	if err := s.UpsertAccount(a); err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("account %s detached: 改由 POST /v1/usage 餵入，ccquota 不再自行 refresh/poll\n", *id)
+	fmt.Printf("account %s detached: 不再自行 refresh,access token 改由 POST /v1/token 餵入\n", *id)
 }
 
 // runPoll 執行一次 poll 後退出。

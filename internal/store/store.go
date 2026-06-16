@@ -20,11 +20,6 @@ type Account struct {
 	ExpiresAt    int64 // unix seconds
 }
 
-// External 表示此帳號的用量改由外部推送（POST /v1/usage）餵入，
-// poller 不應自行 refresh 或拉取。以「沒有 refresh token」為判準
-// （detach 後即進入此模式，避開被限流的 token endpoint）。
-func (a Account) External() bool { return a.RefreshToken == "" }
-
 // dsn 組裝 SQLite DSN，附加 busy_timeout pragma（5 秒）以避免並行寫入立即報錯。
 func dsn(path string) string {
 	sep := "?"

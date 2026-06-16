@@ -31,27 +31,48 @@ func (c *countingUsage) Fetch(_ context.Context, _ string) (usage.Snapshot, erro
 	return usage.Snapshot{}, nil
 }
 
-// TestExternalAccountSkipped 確保「外部餵入」帳號（無 refresh token）不會 refresh、
-// 不會 fetch usage、也不寫 reading，避免再戳被限流的 token endpoint。
-func TestExternalAccountSkipped(t *testing.T) {
+// TestClientFedAccountPollsUsageNoRefresh:client 餵 token 的帳號(有 access、
+// 無 refresh token)應該拉 usage 寫 reading,但絕不 refresh(不碰 token endpoint)。
+func TestClientFedAccountPollsUsageNoRefresh(t *testing.T) {
 	s, _ := store.Open(":memory:")
 	defer s.Close()
 	fr := &fakeRefresher{}
 	cu := &countingUsage{}
 	p := &Poller{Store: s, Usage: cu, OAuth: fr, Now: func() int64 { return 1000 }}
 
-	acct := store.Account{ID: "ext", AccessToken: "", RefreshToken: "", ExpiresAt: 0}
+	// 有 access token、無 refresh token、已過期(若會 refresh 就會觸發)。
+	acct := store.Account{ID: "fed", AccessToken: "AT", RefreshToken: "", ExpiresAt: 0}
 	if err := p.cycle(context.Background(), acct); err != nil {
 		t.Fatalf("cycle 不該回錯: %v", err)
 	}
 	if fr.calls != 0 {
-		t.Errorf("外部帳號不該 refresh，卻呼叫 %d 次", fr.calls)
+		t.Errorf("無 refresh token 不該 refresh，卻呼叫 %d 次", fr.calls)
 	}
-	if cu.calls != 0 {
-		t.Errorf("外部帳號不該 fetch usage，卻呼叫 %d 次", cu.calls)
+	if cu.calls != 1 {
+		t.Errorf("有 access token 應拉一次 usage，卻 %d 次", cu.calls)
 	}
-	if _, ok, _ := s.LatestReading("ext"); ok {
-		t.Error("外部帳號 cycle 不該寫入 reading")
+	if _, ok, _ := s.LatestReading("fed"); !ok {
+		t.Error("client 餵 token 的帳號 cycle 應寫入 reading")
+	}
+}
+
+// TestNoTokenAccountSkipped:沒有 access token 的帳號(剛 detach、client 還沒推)整個跳過。
+func TestNoTokenAccountSkipped(t *testing.T) {
+	s, _ := store.Open(":memory:")
+	defer s.Close()
+	fr := &fakeRefresher{}
+	cu := &countingUsage{}
+	p := &Poller{Store: s, Usage: cu, OAuth: fr, Now: func() int64 { return 1000 }}
+
+	acct := store.Account{ID: "empty", AccessToken: "", RefreshToken: "", ExpiresAt: 0}
+	if err := p.cycle(context.Background(), acct); err != nil {
+		t.Fatalf("cycle 不該回錯: %v", err)
+	}
+	if fr.calls != 0 || cu.calls != 0 {
+		t.Errorf("無 token 帳號應全跳過,refresh=%d usage=%d", fr.calls, cu.calls)
+	}
+	if _, ok, _ := s.LatestReading("empty"); ok {
+		t.Error("無 token 帳號不該寫入 reading")
 	}
 }
 
