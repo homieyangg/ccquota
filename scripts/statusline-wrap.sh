@@ -25,7 +25,7 @@ if [ -n "$share" ]; then
   # <100% 綠、>=100% 紅(跟 dashboard 的 share 配色一致)。
   if [ "$share" -ge 100 ]; then C=$'\033[38;5;203m'; else C=$'\033[38;5;155m'; fi
   # 進度條:width 5,實心 █(帶色)+ 空 ░(DIM);>100% 夾到滿。
-  w=5; p=$share; [ "$p" -gt 100 ] && p=100
+  w=4; p=$share; [ "$p" -gt 100 ] && p=100
   filled=$(( p * w / 100 )); empty=$(( w - filled ))
   bar=""; i=0; while [ "$i" -lt "$filled" ]; do bar="${bar}█"; i=$((i+1)); done
   e="";   i=0; while [ "$i" -lt "$empty"  ]; do e="${e}░";   i=$((i+1)); done
