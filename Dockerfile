@@ -17,10 +17,15 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -ldflags "-s -w" -o /out/ccquota ./cmd/ccquota
 
+# 預先建好資料目錄，讓匿名 volume 繼承 nonroot(65532) 擁有權。否則容器以
+# nonroot 執行時寫不進預設 root 擁有的 /data，會報 CANTOPEN(14)。
+RUN mkdir -p /out/data
+
 # Stage 2: runtime
 FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=builder /out/ccquota /ccquota
+COPY --from=builder --chown=65532:65532 /out/data /data
 
 ENV CCQUOTA_DB=/data/ccquota.db
 

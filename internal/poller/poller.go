@@ -97,6 +97,11 @@ func (p *Poller) now() int64 {
 
 // cycle polls a single account once.
 func (p *Poller) cycle(ctx context.Context, a store.Account) error {
+	// 外部餵資料的帳號（由 POST /v1/usage 推送）不自行 refresh/poll，直接跳過，
+	// 避免再去戳被限流的 token endpoint。
+	if a.External() {
+		return nil
+	}
 	now := p.now()
 	buf := p.RefreshBuffer
 	if buf == 0 {

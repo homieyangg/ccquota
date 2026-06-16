@@ -72,6 +72,12 @@ func (c *Client) Fetch(ctx context.Context, accessToken string) (Snapshot, error
 	if resp.StatusCode != 200 {
 		return Snapshot{}, fmt.Errorf("usage %d: %s", resp.StatusCode, string(body))
 	}
+	return Parse(body)
+}
+
+// Parse 將 /api/oauth/usage 的回應 JSON 轉成 Snapshot。
+// 供 Fetch（自行拉取）與外部推送端點（POST /v1/usage）共用。
+func Parse(body []byte) (Snapshot, error) {
 	var r raw
 	if err := json.Unmarshal(body, &r); err != nil {
 		return Snapshot{}, err

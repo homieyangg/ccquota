@@ -30,7 +30,7 @@ var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: ccquota <login|set-token|serve|poll|version>")
+		fmt.Fprintln(os.Stderr, "usage: ccquota <login|set-token|detach|serve|poll|version>")
 		os.Exit(2)
 	}
 	// version 不需要開 DB
@@ -54,6 +54,8 @@ func main() {
 		runLogin(s)
 	case "set-token":
 		runSetToken(s)
+	case "detach":
+		runDetach(s)
 	case "serve":
 		runServe(s)
 	case "poll":
@@ -419,6 +421,9 @@ func runServe(s *store.Store) {
 		log.Printf("ingest: disabled (CCQUOTA_INGEST_TOKEN not set)")
 	}
 	mux.Handle("/v1/metrics", ingest.New(s, ingestToken))
+	// 外部推送 7d/5h 用量（client 讀現成 token 打 usage endpoint 後 POST 回來），
+	// server 自身不碰被限流的 token endpoint。
+	mux.Handle("/v1/usage", ingest.NewUsageHandler(s, ingestToken, resetCallback(s, cipher)))
 
 	mux.Handle("/", web.Handler())
 
@@ -431,6 +436,27 @@ func runServe(s *store.Store) {
 		IdleTimeout:  120 * time.Second,
 	}
 	log.Fatal(srv.ListenAndServe())
+}
+
+// runDetach 把帳號切成「外部餵入」模式：清掉 refresh token，poller 之後就不再
+// 自行 refresh/poll（避開被限流的 token endpoint），改由 POST /v1/usage 餵 7d/5h。
+func runDetach(s *store.Store) {
+	fs := flag.NewFlagSet("detach", flag.ExitOnError)
+	id := fs.String("id", "", "account id")
+	fs.Parse(os.Args[2:])
+	if *id == "" {
+		log.Fatal("detach: --id required")
+	}
+	a, err := s.GetAccount(*id)
+	if err != nil {
+		log.Fatalf("detach: account %s: %v", *id, err)
+	}
+	a.RefreshToken = ""
+	a.AccessToken = ""
+	if err := s.UpsertAccount(a); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("account %s detached: 改由 POST /v1/usage 餵入，ccquota 不再自行 refresh/poll\n", *id)
 }
 
 // runPoll 執行一次 poll 後退出。

@@ -3,6 +3,8 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	_ "modernc.org/sqlite"
@@ -18,6 +20,11 @@ type Account struct {
 	ExpiresAt    int64 // unix seconds
 }
 
+// External 表示此帳號的用量改由外部推送（POST /v1/usage）餵入，
+// poller 不應自行 refresh 或拉取。以「沒有 refresh token」為判準
+// （detach 後即進入此模式，避開被限流的 token endpoint）。
+func (a Account) External() bool { return a.RefreshToken == "" }
+
 // dsn 組裝 SQLite DSN，附加 busy_timeout pragma（5 秒）以避免並行寫入立即報錯。
 func dsn(path string) string {
 	sep := "?"
@@ -28,6 +35,12 @@ func dsn(path string) string {
 }
 
 func Open(path string) (*Store, error) {
+	// SQLite 不會自動建立上層目錄，先建好，否則目錄不存在會報 CANTOPEN(14)。
+	if dir := filepath.Dir(path); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, fmt.Errorf("建立資料庫目錄 %q 失敗: %w", dir, err)
+		}
+	}
 	db, err := sql.Open("sqlite", dsn(path))
 	if err != nil {
 		return nil, err
@@ -35,7 +48,7 @@ func Open(path string) (*Store, error) {
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
 		db.Close()
-		return nil, err
+		return nil, fmt.Errorf("開啟資料庫 %q 失敗（請確認目錄存在且可寫入）: %w", path, err)
 	}
 	return s, nil
 }
