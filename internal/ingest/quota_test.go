@@ -125,4 +125,13 @@ func TestQuotaHandlerAuth(t *testing.T) {
 	if rr := getQuota(t, h, "", "Bearer secret"); rr.Code != http.StatusBadRequest {
 		t.Errorf("缺 account 應 400, got %d", rr.Code)
 	}
+	{
+		req := httptest.NewRequest(http.MethodPost, "/v1/quota?account=main", nil)
+		req.Header.Set("Authorization", "Bearer secret")
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		if rr.Code != http.StatusMethodNotAllowed {
+			t.Errorf("non-GET 應 405, got %d", rr.Code)
+		}
+	}
 }
