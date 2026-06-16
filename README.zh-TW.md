@@ -70,6 +70,8 @@ bash <(curl -fsSL -A ccquota-setup https://your-host/e/TOKEN)
 
 一條連結可以用在那個人所有的電腦上,用量會合併到同一個名字底下。Client 透過 Claude Code 原生的 OpenTelemetry 上報花費。
 
+接好帳號後,Claude Code 的 statusline 會顯示額度:5h:23% 7d:59% me:80%。
+
 ## 設定
 
 | 環境變數 | 預設 | 作用 |

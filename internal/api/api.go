@@ -791,6 +791,27 @@ PL
   fi
 fi
 
+# ── ccquota statusline(在 Claude Code statusline 顯示額度)──────────────────────
+SL="$HOME/.ccquota/statusline.sh"
+if curl -fsSL "$RAW_BASE/scripts/statusline.sh" -o "$SL" 2>/dev/null; then
+  chmod +x "$SL"
+  {
+    printf 'CCQUOTA_SERVER=%q\n'  "$SERVER"
+    printf 'CCQUOTA_ACCOUNT=%q\n' "$ACCOUNT"
+    printf 'CCQUOTA_USER=%q\n'    "$USER_NAME"
+    printf 'CCQUOTA_TOKEN=%q\n'   "$TOKEN"
+  } > "$HOME/.ccquota/config"
+  chmod 600 "$HOME/.ccquota/config"
+  SL_CMD=$(printf 'bash %q' "$SL")
+  if jq -e '.statusLine' "$SETTINGS_FILE" >/dev/null 2>&1; then
+    echo "! 偵測到既有 statusLine,未覆蓋。要顯示額度可手動把 command 設為:$SL_CMD"
+  else
+    UPDATED=$(jq --arg cmd "$SL_CMD" '.statusLine = {"type":"command","command":$cmd}' "$SETTINGS_FILE")
+    printf '%s\n' "$UPDATED" > "$SETTINGS_FILE"
+    echo "✓ ccquota statusline"
+  fi
+fi
+
 msg done
 msg restart
 `))
