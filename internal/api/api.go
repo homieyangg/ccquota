@@ -802,7 +802,7 @@ if curl -fsSL "$RAW_BASE/scripts/statusline.sh" -o "$SL" 2>/dev/null; then
     printf 'CCQUOTA_TOKEN=%q\n'   "$TOKEN"
   } > "$HOME/.ccquota/config"
   chmod 600 "$HOME/.ccquota/config"
-  SL_CMD="bash $SL"
+  SL_CMD=$(printf 'bash %q' "$SL")
   if jq -e '.statusLine' "$SETTINGS_FILE" >/dev/null 2>&1; then
     echo "! 偵測到既有 statusLine,未覆蓋。要顯示額度可手動把 command 設為:$SL_CMD"
   else
