@@ -1,8 +1,24 @@
 package store
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
+
+// TestOpenCreatesParentDir 確保 Open 會自動建立 DB 檔的上層目錄，
+// 避免目錄不存在時報 SQLite CANTOPEN(14)。
+func TestOpenCreatesParentDir(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "sub", "ccquota.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open 應自動建立上層目錄，卻失敗: %v", err)
+	}
+	defer s.Close()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("DB 檔未建立: %v", err)
+	}
+}
 
 func TestUpsertAndGetAccount(t *testing.T) {
 	s, err := Open(":memory:")

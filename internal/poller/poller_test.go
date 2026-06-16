@@ -24,6 +24,37 @@ func (f *fakeRefresher) Refresh(_ context.Context, _ string) (oauth.Token, error
 	return oauth.Token{}, f.err
 }
 
+type countingUsage struct{ calls int }
+
+func (c *countingUsage) Fetch(_ context.Context, _ string) (usage.Snapshot, error) {
+	c.calls++
+	return usage.Snapshot{}, nil
+}
+
+// TestExternalAccountSkipped 確保「外部餵入」帳號（無 refresh token）不會 refresh、
+// 不會 fetch usage、也不寫 reading，避免再戳被限流的 token endpoint。
+func TestExternalAccountSkipped(t *testing.T) {
+	s, _ := store.Open(":memory:")
+	defer s.Close()
+	fr := &fakeRefresher{}
+	cu := &countingUsage{}
+	p := &Poller{Store: s, Usage: cu, OAuth: fr, Now: func() int64 { return 1000 }}
+
+	acct := store.Account{ID: "ext", AccessToken: "", RefreshToken: "", ExpiresAt: 0}
+	if err := p.cycle(context.Background(), acct); err != nil {
+		t.Fatalf("cycle 不該回錯: %v", err)
+	}
+	if fr.calls != 0 {
+		t.Errorf("外部帳號不該 refresh，卻呼叫 %d 次", fr.calls)
+	}
+	if cu.calls != 0 {
+		t.Errorf("外部帳號不該 fetch usage，卻呼叫 %d 次", cu.calls)
+	}
+	if _, ok, _ := s.LatestReading("ext"); ok {
+		t.Error("外部帳號 cycle 不該寫入 reading")
+	}
+}
+
 func TestRefreshBackoff(t *testing.T) {
 	s, _ := store.Open(":memory:")
 	defer s.Close()
