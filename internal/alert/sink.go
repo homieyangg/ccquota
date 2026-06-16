@@ -10,20 +10,25 @@ import (
 	"strings"
 )
 
-// Sink 是通知後端介面。Send 發送純文字（或 HTML）訊息。
+// Sink 是通知後端介面。Send 發送純文字（或 HTML）訊息；
+// Lang 回傳此頻道偏好的通知語言（空字串代表沿用全域）。
 type Sink interface {
 	Send(ctx context.Context, text string) error
+	Lang() string
 }
 
 // TelegramSink 透過 Telegram Bot API 發送訊息。
 // 若 HTTP 為 nil 則使用 http.DefaultClient。
 // BaseURL 供測試覆寫；預設為 "https://api.telegram.org"。
 type TelegramSink struct {
-	Token   string
-	ChatID  string
-	BaseURL string       // optional; default "https://api.telegram.org"
-	HTTP    *http.Client // optional; default http.DefaultClient
+	Token    string
+	ChatID   string
+	Language string       // 通知語言；空 = 沿用全域
+	BaseURL  string       // optional; default "https://api.telegram.org"
+	HTTP     *http.Client // optional; default http.DefaultClient
 }
+
+func (t *TelegramSink) Lang() string { return t.Language }
 
 func (t *TelegramSink) Send(ctx context.Context, text string) error {
 	base := t.BaseURL
@@ -64,9 +69,12 @@ func (t *TelegramSink) Send(ctx context.Context, text string) error {
 // WebhookSink 透過 HTTP POST JSON {"text":"..."} 發送訊息。
 // 若 HTTP 為 nil 則使用 http.DefaultClient。
 type WebhookSink struct {
-	URL  string
-	HTTP *http.Client // optional; default http.DefaultClient
+	URL      string
+	Language string       // 通知語言；空 = 沿用全域
+	HTTP     *http.Client // optional; default http.DefaultClient
 }
+
+func (w *WebhookSink) Lang() string { return w.Language }
 
 func (w *WebhookSink) Send(ctx context.Context, text string) error {
 	payload, err := json.Marshal(map[string]string{"text": text})
@@ -102,9 +110,9 @@ func (w *WebhookSink) Send(ctx context.Context, text string) error {
 func BuildSink(chType string, cfg map[string]string) (Sink, error) {
 	switch chType {
 	case "telegram":
-		return &TelegramSink{Token: cfg["bot_token"], ChatID: cfg["chat_id"]}, nil
+		return &TelegramSink{Token: cfg["bot_token"], ChatID: cfg["chat_id"], Language: cfg["lang"]}, nil
 	case "webhook":
-		return &WebhookSink{URL: cfg["url"]}, nil
+		return &WebhookSink{URL: cfg["url"], Language: cfg["lang"]}, nil
 	default:
 		return nil, fmt.Errorf("alert: unknown channel type %q", chType)
 	}

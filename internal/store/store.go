@@ -404,11 +404,18 @@ type AlertThresholds struct {
 	SevenDayCrit float64
 	FiveHourCrit float64
 	ResetNotify  bool
+	// 每人平分額度告警(advisory):佔比可 >100%,門檻較高;預設關閉。
+	UserShareNotify bool
+	UserShareWarn   float64
+	UserShareCrit   float64
 }
 
 // GetAlertThresholds 從 settings 讀門檻；未設定時回預設（75/90/95/on）。
 func (s *Store) GetAlertThresholds() (AlertThresholds, error) {
-	t := AlertThresholds{SevenDayWarn: 75, SevenDayCrit: 90, FiveHourCrit: 95, ResetNotify: true}
+	t := AlertThresholds{
+		SevenDayWarn: 75, SevenDayCrit: 90, FiveHourCrit: 95, ResetNotify: true,
+		UserShareNotify: false, UserShareWarn: 150, UserShareCrit: 250,
+	}
 	if v, ok, err := s.GetSetting("alert_seven_day_warn"); err != nil {
 		return t, err
 	} else if ok {
@@ -429,6 +436,21 @@ func (s *Store) GetAlertThresholds() (AlertThresholds, error) {
 	} else if ok {
 		t.ResetNotify = v == "1"
 	}
+	if v, ok, err := s.GetSetting("alert_user_share_notify"); err != nil {
+		return t, err
+	} else if ok {
+		t.UserShareNotify = v == "1"
+	}
+	if v, ok, err := s.GetSetting("alert_user_share_warn"); err != nil {
+		return t, err
+	} else if ok {
+		fmt.Sscanf(v, "%g", &t.UserShareWarn)
+	}
+	if v, ok, err := s.GetSetting("alert_user_share_crit"); err != nil {
+		return t, err
+	} else if ok {
+		fmt.Sscanf(v, "%g", &t.UserShareCrit)
+	}
 	return t, nil
 }
 
@@ -443,7 +465,16 @@ func (s *Store) SetAlertThresholds(t AlertThresholds) error {
 	if err := s.SetSetting("alert_five_hour_crit", fmt.Sprintf("%g", t.FiveHourCrit)); err != nil {
 		return err
 	}
-	return s.SetSetting("alert_reset_notify", boolToSetting(t.ResetNotify))
+	if err := s.SetSetting("alert_reset_notify", boolToSetting(t.ResetNotify)); err != nil {
+		return err
+	}
+	if err := s.SetSetting("alert_user_share_notify", boolToSetting(t.UserShareNotify)); err != nil {
+		return err
+	}
+	if err := s.SetSetting("alert_user_share_warn", fmt.Sprintf("%g", t.UserShareWarn)); err != nil {
+		return err
+	}
+	return s.SetSetting("alert_user_share_crit", fmt.Sprintf("%g", t.UserShareCrit))
 }
 
 func boolToSetting(b bool) string {

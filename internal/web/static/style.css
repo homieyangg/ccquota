@@ -439,6 +439,8 @@ button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.1
 .threshold-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .threshold-grid .form-row { margin-bottom: 0; }
 @media (max-width: 480px) { .threshold-grid { grid-template-columns: 1fr; } }
+.settings-subhead { font-size: 12px; font-weight: 600; color: var(--ink-2); margin: 16px 0 8px; text-transform: uppercase; letter-spacing: .03em; }
+.settings-caption { font-size: 11px; color: var(--ink-3); margin: 0 0 10px; line-height: 1.5; }
 
 /* toggle switch */
 .switch { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }

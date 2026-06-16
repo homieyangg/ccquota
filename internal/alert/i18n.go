@@ -12,27 +12,35 @@ import "fmt"
 //	weekly_crit     → %s account, %.0f pct%
 //	five_hour_crit  → %s account, %.0f pct%
 //	stale           → %s account, %d ageSec
+//	user_share_warn → %s user, %.0f sharePct%, %.2f userCost, %.2f perUserBudget
+//	user_share_crit → %s user, %.0f sharePct%, %.2f userCost, %.2f perUserBudget
 var templates = map[string]map[string]string{
 	"en": {
-		"reset":          "🔄 <b>Quota Reset</b>\nAccount: <code>%s</code>\n7-day usage reset: <b>%.0f%%</b> → <b>%.0f%%</b>",
-		"weekly_warn":    "🟡 <b>Weekly Quota Warning</b>\nAccount: <code>%s</code>\n7-day usage at <b>%.0f%%</b>, approaching limit",
-		"weekly_crit":    "🚨 <b>Weekly Quota Critical</b>\nAccount: <code>%s</code>\n7-day usage at <b>%.0f%%</b>, near limit",
-		"five_hour_crit": "🚨 <b>5-Hour Quota Critical</b>\nAccount: <code>%s</code>\n5-hour usage at <b>%.0f%%</b>, near limit",
-		"stale":          "⚠️ <b>Poller Stale</b>\nAccount: <code>%s</code>\nNo data for %d seconds. Poller may be down.",
+		"reset":           "🔄 <b>Quota Reset</b>\nAccount: <code>%s</code>\n7-day usage reset: <b>%.0f%%</b> → <b>%.0f%%</b>",
+		"weekly_warn":     "🟡 <b>Weekly Quota Warning</b>\nAccount: <code>%s</code>\n7-day usage at <b>%.0f%%</b>, approaching limit",
+		"weekly_crit":     "🚨 <b>Weekly Quota Critical</b>\nAccount: <code>%s</code>\n7-day usage at <b>%.0f%%</b>, near limit",
+		"five_hour_crit":  "🚨 <b>5-Hour Quota Critical</b>\nAccount: <code>%s</code>\n5-hour usage at <b>%.0f%%</b>, near limit",
+		"stale":           "⚠️ <b>Poller Stale</b>\nAccount: <code>%s</code>\nNo data for %d seconds. Poller may be down.",
+		"user_share_warn": "📊 <b>Fair-share advisory</b>\nUser: <code>%s</code>\nUsed <b>%.0f%%</b> of weekly fair share ($%.2f / $%.2f per user)",
+		"user_share_crit": "📊 <b>Fair-share advisory (high)</b>\nUser: <code>%s</code>\nUsed <b>%.0f%%</b> of weekly fair share ($%.2f / $%.2f per user)",
 	},
 	"zh-TW": {
-		"reset":          "🔄 <b>配額已重置</b>\n帳號：<code>%s</code>\n7日用量重置：<b>%.0f%%</b> → <b>%.0f%%</b>",
-		"weekly_warn":    "🟡 <b>週配額警告</b>\n帳號：<code>%s</code>\n7日用量已達 <b>%.0f%%</b>，接近上限",
-		"weekly_crit":    "🚨 <b>週配額緊急</b>\n帳號：<code>%s</code>\n7日用量已達 <b>%.0f%%</b>，即將觸頂",
-		"five_hour_crit": "🚨 <b>5小時配額緊急</b>\n帳號：<code>%s</code>\n5小時用量已達 <b>%.0f%%</b>，即將觸頂",
-		"stale":          "⚠️ <b>Poller 停止回報</b>\n帳號：<code>%s</code>\n已 %d 秒無資料，poller 可能已停止",
+		"reset":           "🔄 <b>配額已重置</b>\n帳號：<code>%s</code>\n7日用量重置：<b>%.0f%%</b> → <b>%.0f%%</b>",
+		"weekly_warn":     "🟡 <b>週配額警告</b>\n帳號：<code>%s</code>\n7日用量已達 <b>%.0f%%</b>，接近上限",
+		"weekly_crit":     "🚨 <b>週配額緊急</b>\n帳號：<code>%s</code>\n7日用量已達 <b>%.0f%%</b>，即將觸頂",
+		"five_hour_crit":  "🚨 <b>5小時配額緊急</b>\n帳號：<code>%s</code>\n5小時用量已達 <b>%.0f%%</b>，即將觸頂",
+		"stale":           "⚠️ <b>Poller 停止回報</b>\n帳號：<code>%s</code>\n已 %d 秒無資料，poller 可能已停止",
+		"user_share_warn": "📊 <b>平分額度提醒</b>\n使用者：<code>%s</code>\n本週已用 <b>%.0f%%</b> 平分額度（$%.2f / 人均 $%.2f）",
+		"user_share_crit": "📊 <b>平分額度提醒（偏高）</b>\n使用者：<code>%s</code>\n本週已用 <b>%.0f%%</b> 平分額度（$%.2f / 人均 $%.2f）",
 	},
 	"zh-CN": {
-		"reset":          "🔄 <b>配额已重置</b>\n账号：<code>%s</code>\n7日用量重置：<b>%.0f%%</b> → <b>%.0f%%</b>",
-		"weekly_warn":    "🟡 <b>周配额警告</b>\n账号：<code>%s</code>\n7日用量已达 <b>%.0f%%</b>，接近上限",
-		"weekly_crit":    "🚨 <b>周配额紧急</b>\n账号：<code>%s</code>\n7日用量已达 <b>%.0f%%</b>，即将触顶",
-		"five_hour_crit": "🚨 <b>5小时配额紧急</b>\n账号：<code>%s</code>\n5小时用量已达 <b>%.0f%%</b>，即将触顶",
-		"stale":          "⚠️ <b>Poller 停止上报</b>\n账号：<code>%s</code>\n已 %d 秒无数据，poller 可能已停止",
+		"reset":           "🔄 <b>配额已重置</b>\n账号：<code>%s</code>\n7日用量重置：<b>%.0f%%</b> → <b>%.0f%%</b>",
+		"weekly_warn":     "🟡 <b>周配额警告</b>\n账号：<code>%s</code>\n7日用量已达 <b>%.0f%%</b>，接近上限",
+		"weekly_crit":     "🚨 <b>周配额紧急</b>\n账号：<code>%s</code>\n7日用量已达 <b>%.0f%%</b>，即将触顶",
+		"five_hour_crit":  "🚨 <b>5小时配额紧急</b>\n账号：<code>%s</code>\n5小时用量已达 <b>%.0f%%</b>，即将触顶",
+		"stale":           "⚠️ <b>Poller 停止上报</b>\n账号：<code>%s</code>\n已 %d 秒无数据，poller 可能已停止",
+		"user_share_warn": "📊 <b>均摊额度提醒</b>\n用户：<code>%s</code>\n本周已用 <b>%.0f%%</b> 均摊额度（$%.2f / 人均 $%.2f）",
+		"user_share_crit": "📊 <b>均摊额度提醒（偏高）</b>\n用户：<code>%s</code>\n本周已用 <b>%.0f%%</b> 均摊额度（$%.2f / 人均 $%.2f）",
 	},
 }
 

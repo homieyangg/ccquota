@@ -250,8 +250,8 @@ document.addEventListener('alpine:init', () => {
     // notifications
     settingsTab: 'account',
     channels: [],
-    thresholds: { SevenDayWarn: 75, SevenDayCrit: 90, FiveHourCrit: 95, ResetNotify: true },
-    newChannel: { type: 'telegram', enabled: true, config: { bot_token: '', chat_id: '' } },
+    thresholds: { SevenDayWarn: 75, SevenDayCrit: 90, FiveHourCrit: 95, ResetNotify: true, UserShareNotify: false, UserShareWarn: 150, UserShareCrit: 250 },
+    newChannel: { type: 'telegram', enabled: true, config: { bot_token: '', chat_id: '', lang: '' } },
     notifMsg: '',
     notifMsgType: '',
 
@@ -409,8 +409,12 @@ document.addEventListener('alpine:init', () => {
         const data = await apiGet('/api/notifications');
         this.channels = data.channels || [];
         // 清空 bot_token，避免將遮罩值回存；後端收到空值時保留原 token
+        // lang 缺值正規化成 ''（下拉顯示「沿用伺服器預設」，存回也忠實 round-trip）
         for (const ch of this.channels) {
-          if (ch.type === 'telegram' && ch.config) ch.config.bot_token = '';
+          if (ch.type === 'telegram' && ch.config) {
+            ch.config.bot_token = '';
+            if (ch.config.lang == null) ch.config.lang = '';
+          }
         }
         if (data.thresholds) this.thresholds = data.thresholds;
       } catch (e) { console.error('load notifications', e); }
@@ -420,7 +424,7 @@ document.addEventListener('alpine:init', () => {
       this.notifMsg = '';
       try {
         await apiPost('/api/notifications/channels', this.newChannel);
-        this.newChannel = { type: 'telegram', enabled: true, config: { bot_token: '', chat_id: '' } };
+        this.newChannel = { type: 'telegram', enabled: true, config: { bot_token: '', chat_id: '', lang: '' } };
         await this.loadNotifications();
         this.notifMsg = this.t('notif_saved'); this.notifMsgType = 'success';
       } catch (e) { this.notifMsg = e.message; this.notifMsgType = 'error'; }
@@ -449,6 +453,12 @@ document.addEventListener('alpine:init', () => {
     },
 
     async saveThresholds() {
+      // 平分額度告警:warn 必須小於 crit,否則 warn 永遠不觸發。
+      if (this.thresholds.UserShareNotify &&
+          this.thresholds.UserShareWarn >= this.thresholds.UserShareCrit) {
+        this.notifMsg = this.t('notif_share_order_err'); this.notifMsgType = 'error';
+        return;
+      }
       try {
         await apiPut('/api/notifications/thresholds', this.thresholds);
         this.notifMsg = this.t('notif_saved'); this.notifMsgType = 'success';
