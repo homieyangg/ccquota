@@ -130,5 +130,42 @@ UPDATED=$(jq \
 
 printf '%s\n' "$UPDATED" > "$SETTINGS_FILE"
 
+# ── ccquota 帳號額度餵送(Arch Y:推本機現成 token,server 統一輪詢 usage)──────────
+# 每台 client 都裝;共用帳號=自動備援,server 對每帳號每週期只打一次 usage,不會 N 倍 429。
+RAW_BASE="${CCQUOTA_REPO_RAW:-https://raw.githubusercontent.com/homieyangg/ccquota/main}"
+TP="$HOME/.ccquota/token-push.sh"
+mkdir -p "$HOME/.ccquota"
+if curl -fsSL "$RAW_BASE/scripts/token-push.sh" -o "$TP" 2>/dev/null; then
+  chmod +x "$TP"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    PLIST="$HOME/Library/LaunchAgents/com.ccquota.token-push.plist"
+    mkdir -p "$HOME/Library/LaunchAgents"
+    cat > "$PLIST" <<PL
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.ccquota.token-push</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string><string>$TP</string>
+    <string>--server</string><string>$SERVER</string>
+    <string>--account</string><string>$ACCOUNT</string>
+    <string>--token</string><string>$TOKEN</string>
+  </array>
+  <key>StartInterval</key><integer>300</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>/tmp/ccquota-token-push.log</string>
+  <key>StandardErrorPath</key><string>/tmp/ccquota-token-push.log</string>
+</dict></plist>
+PL
+    chmod 600 "$PLIST"
+    launchctl bootout "gui/$(id -u)/com.ccquota.token-push" 2>/dev/null || true
+    launchctl bootstrap "gui/$(id -u)" "$PLIST" 2>/dev/null || launchctl load "$PLIST" 2>/dev/null || true
+    echo "✓ ccquota token-push 已掛 launchd(每 5 分鐘推送額度 token)"
+  else
+    LINE="*/5 * * * * CCQUOTA_INGEST_TOKEN=$TOKEN $TP --server $SERVER --account $ACCOUNT >/tmp/ccquota-token-push.log 2>&1"
+    ( crontab -l 2>/dev/null | grep -v 'ccquota/token-push.sh' ; echo "$LINE" ) | crontab - 2>/dev/null \
+      && echo "✓ ccquota token-push 已加進 crontab(每 5 分鐘)" || echo "! crontab 設定失敗,可手動跑 $TP"
+  fi
+fi
+
 msg done
 msg restart

@@ -97,18 +97,15 @@ func (p *Poller) now() int64 {
 
 // cycle polls a single account once.
 func (p *Poller) cycle(ctx context.Context, a store.Account) error {
-	// 外部餵資料的帳號（由 POST /v1/usage 推送）不自行 refresh/poll，直接跳過，
-	// 避免再去戳被限流的 token endpoint。
-	if a.External() {
-		return nil
-	}
 	now := p.now()
 	buf := p.RefreshBuffer
 	if buf == 0 {
 		buf = 3600
 	}
-	// refresh if near expiry;退避避免在 token endpoint 限流時每輪狂重試
-	if p.OAuth != nil && a.ExpiresAt-now < buf {
+	// 只有「自己保管 refresh token」的帳號才自行 refresh;client 餵 token 的帳號
+	// (refresh token 為空)永不碰被限流的 token endpoint,access token 由
+	// POST /v1/token 餵入。退避避免限流時每輪狂重試。
+	if p.OAuth != nil && a.RefreshToken != "" && a.ExpiresAt-now < buf {
 		if !p.refreshAllowed(a.ID, now) {
 			log.Printf("account %s: refresh backing off, skip this cycle", a.ID)
 		} else {
@@ -129,6 +126,11 @@ func (p *Poller) cycle(ctx context.Context, a store.Account) error {
 				}
 			}
 		}
+	}
+
+	// 沒有可用 access token 就跳過(例如剛 detach、client 還沒推 token)。
+	if a.AccessToken == "" {
+		return nil
 	}
 
 	snap, err := p.Usage.Fetch(ctx, a.AccessToken)
