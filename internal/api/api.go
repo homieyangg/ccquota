@@ -792,9 +792,12 @@ PL
 fi
 
 # ── ccquota statusline(在 Claude Code statusline 顯示額度)──────────────────────
+# 由 wrap 當統一入口:有既有 statusLine 就包起來、跑完接上 ccquota 個人 share;沒有就出完整 ccquota 行。
 SL="$HOME/.ccquota/statusline.sh"
+WRAP="$HOME/.ccquota/statusline-wrap.sh"
 if curl -fsSL "$RAW_BASE/scripts/statusline.sh" -o "$SL" 2>/dev/null; then
   chmod +x "$SL"
+  curl -fsSL "$RAW_BASE/scripts/statusline-wrap.sh" -o "$WRAP" 2>/dev/null && chmod +x "$WRAP"
   {
     printf 'CCQUOTA_SERVER=%q\n'  "$SERVER"
     printf 'CCQUOTA_ACCOUNT=%q\n' "$ACCOUNT"
@@ -802,14 +805,22 @@ if curl -fsSL "$RAW_BASE/scripts/statusline.sh" -o "$SL" 2>/dev/null; then
     printf 'CCQUOTA_TOKEN=%q\n'   "$TOKEN"
   } > "$HOME/.ccquota/config"
   chmod 600 "$HOME/.ccquota/config"
-  SL_CMD=$(printf 'bash %q' "$SL")
-  if jq -e '.statusLine' "$SETTINGS_FILE" >/dev/null 2>&1; then
-    echo "! 偵測到既有 statusLine,未覆蓋。要顯示額度可手動把 command 設為:$SL_CMD"
-  else
-    UPDATED=$(jq --arg cmd "$SL_CMD" '.statusLine = {"type":"command","command":$cmd}' "$SETTINGS_FILE")
-    printf '%s\n' "$UPDATED" > "$SETTINGS_FILE"
-    echo "✓ ccquota statusline"
-  fi
+  WRAP_CMD=$(printf 'bash %q' "$WRAP")
+  existing=$(jq -r '.statusLine.command // empty' "$SETTINGS_FILE" 2>/dev/null)
+  case "$existing" in
+    *.ccquota/statusline-wrap.sh*)
+      echo "✓ ccquota statusline(已設定)" ;;
+    "")
+      rm -f "$HOME/.ccquota/statusline-orig"
+      UPDATED=$(jq --arg cmd "$WRAP_CMD" '.statusLine = {"type":"command","command":$cmd}' "$SETTINGS_FILE")
+      printf '%s\n' "$UPDATED" > "$SETTINGS_FILE"
+      echo "✓ ccquota statusline" ;;
+    *)
+      printf '%s' "$existing" > "$HOME/.ccquota/statusline-orig"
+      UPDATED=$(jq --arg cmd "$WRAP_CMD" '.statusLine.command = $cmd' "$SETTINGS_FILE")
+      printf '%s\n' "$UPDATED" > "$SETTINGS_FILE"
+      echo "✓ ccquota statusline(已接在你原本的 statusline 後)" ;;
+  esac
 fi
 
 msg done

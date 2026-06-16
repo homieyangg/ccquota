@@ -58,4 +58,35 @@ printf 'STALE-LINE' > "$TMP/quota.cache"
 out=$(CCQUOTA_DIR="$TMP" CCQUOTA_QUOTA_JSON='not json' bash "$SL")
 chk "壞JSON用舊cache" "STALE-LINE" "$out"
 
+# 新格式:單一 ccquota 前綴 + " | " 分隔
+rm -f "$TMP/quota.cache"
+out=$(CCQUOTA_DIR="$TMP" CCQUOTA_QUOTA_JSON='{"five_hour":23,"seven_day":59,"share_pct":80,"thresholds":{"five_hour_crit":95,"seven_day_warn":75,"seven_day_crit":90,"user_share_warn":150,"user_share_crit":250}}' bash "$SL")
+chk "ccquota 前綴" "ccquota " "$out"
+chk "段分隔 |"     " | "      "$out"
+chk "含 5h"        "5h:23%"   "$out"
+
+# ── statusline-wrap.sh ──────────────────────────────────────────────────────
+WRAP="$HERE/statusline-wrap.sh"
+cp "$SL" "$TMP/statusline.sh"
+FULLJSON='{"five_hour":23,"seven_day":59,"share_pct":80,"thresholds":{"five_hour_crit":95,"seven_day_warn":75,"seven_day_crit":90,"user_share_warn":150,"user_share_crit":250}}'
+
+# 無 orig(standalone)→ 出完整 ccquota 行
+rm -f "$TMP/statusline-orig" "$TMP/quota.cache"
+out=$(CCQUOTA_DIR="$TMP" CCQUOTA_QUOTA_JSON="$FULLJSON" bash "$WRAP" </dev/null)
+chk "wrap standalone 完整" "ccquota " "$out"
+chk "wrap standalone 5h"   "5h:23%"   "$out"
+
+# 有 orig → 跑原指令 + 接 ccquota share(含 bar),不重複 5h/7d
+printf 'echo BASELINE' > "$TMP/statusline-orig"; rm -f "$TMP/quota.cache"
+out=$(CCQUOTA_DIR="$TMP" CCQUOTA_QUOTA_JSON="$FULLJSON" bash "$WRAP" </dev/null)
+chk "wrap 跑原指令"   "BASELINE"   "$out"
+chk "wrap 接 share"   "ccquota:"   "$out"
+chk "wrap 含 80%"     "80%"        "$out"
+if printf '%s' "$out" | grep -Fq "5h:"; then echo "FAIL- wrap 不該重複 5h: '$out'"; fail=1; else echo "ok  - wrap 不重複 5h"; fi
+
+# share >=100 → 紅
+printf 'echo X' > "$TMP/statusline-orig"; rm -f "$TMP/quota.cache"
+out=$(CCQUOTA_DIR="$TMP" CCQUOTA_QUOTA_JSON='{"five_hour":1,"seven_day":1,"share_pct":111,"thresholds":{"five_hour_crit":95,"seven_day_warn":75,"seven_day_crit":90,"user_share_warn":150,"user_share_crit":250}}' bash "$WRAP" </dev/null)
+chk "wrap share>=100 紅" $'\033[38;5;203m' "$out"
+
 exit $fail
