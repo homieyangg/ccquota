@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ccquota statusline: 顯示帳號 5h/7d 使用率 + 個人平分額度佔比(門檻變色)。
 # 由 Claude Code 的 statusLine 呼叫。self-caching:cache 新鮮就直接印,過期才打一次 server。
-# config(SERVER/ACCOUNT/USER/TOKEN)由 enroll 寫進 ~/.ccquota/config。
+# config(CCQUOTA_SERVER/CCQUOTA_ACCOUNT/CCQUOTA_USER/CCQUOTA_TOKEN)由 enroll 寫進 ~/.ccquota/config。
 # 測試/除錯:設 CCQUOTA_QUOTA_JSON 可跳過 curl 直接餵 JSON。
 set -uo pipefail
 
@@ -25,8 +25,8 @@ fi
 if [ -n "${CCQUOTA_QUOTA_JSON:-}" ]; then
   json="$CCQUOTA_QUOTA_JSON"
 else
-  json=$(curl -fsS --max-time 2 -H "Authorization: Bearer ${TOKEN:-}" \
-    "${SERVER:-}/v1/quota?account=${ACCOUNT:-}&user=${USER:-}" 2>/dev/null)
+  json=$(curl -fsS --max-time 2 -H "Authorization: Bearer ${CCQUOTA_TOKEN:-}" \
+    "${CCQUOTA_SERVER:-}/v1/quota?account=${CCQUOTA_ACCOUNT:-}&user=${CCQUOTA_USER:-}" 2>/dev/null)
 fi
 
 # server 掛掉/沒裝/壞 JSON:有舊 cache 用舊的,否則印佔位。
@@ -58,6 +58,7 @@ out=""
 [ "$share" != "-1" ] && out="${out}$(col "$share" "$usw" "$usc")me:$(seg "$share")%${RESET}"
 
 out="${out% }"
+[ -z "$out" ] && out='5h:– 7d:–'
 mkdir -p "$DIR"
 printf '%s' "$out" > "$CACHE"
 printf '%s' "$out"
