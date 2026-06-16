@@ -255,16 +255,26 @@
         </div>
 
         <div class="connect-form dialog-body">
-          <div class="form-row">
-            <label x-text="t('account_id_label')">Account ID:</label>
-            <input type="text" x-model="connectId" placeholder="main">
-          </div>
-          <div class="form-row">
-            <label x-text="t('account_label_label')">Label (optional):</label>
-            <input type="text" x-model="connectLabel" placeholder="My Account">
+          <!-- 推薦:在 server 上一鍵接帳號(CLI-backed,免被限流) -->
+          <div class="connect-recommended">
+            <div class="settings-subhead" x-text="t('connect_cli_title')"></div>
+            <p class="settings-caption" x-text="t('connect_cli_help')"></p>
+            <div class="enroll-cmd"><code>ccquota connect</code></div>
           </div>
 
-          <button @click="startLogin()" :disabled="startBtnDisabled" x-text="t('connect_btn')">Start OAuth Flow</button>
+          <details class="connect-advanced" style="margin-top:16px">
+            <summary x-text="t('connect_oauth_advanced')"></summary>
+            <p class="settings-caption" x-text="t('connect_oauth_note')"></p>
+            <div class="form-row">
+              <label x-text="t('account_id_label')">Account ID:</label>
+              <input type="text" x-model="connectId" placeholder="main">
+            </div>
+            <div class="form-row">
+              <label x-text="t('account_label_label')">Label (optional):</label>
+              <input type="text" x-model="connectLabel" placeholder="My Account">
+            </div>
+
+            <button @click="startLogin()" :disabled="startBtnDisabled" x-text="t('connect_btn')">Start OAuth Flow</button>
 
           <!-- OAuth flow (shown after startLogin) -->
           <div id="oauth-flow" x-show="showOauthFlow" style="display:none">
@@ -282,6 +292,7 @@
             </div>
             <button @click="completeLogin()" x-text="t('complete_btn')">Complete Login</button>
           </div>
+          </details>
 
           <!-- Status message -->
           <div id="connect-msg"

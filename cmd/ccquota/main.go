@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -31,7 +32,7 @@ var version = "dev"
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: ccquota <login|set-token|detach|serve|poll|version>")
+		fmt.Fprintln(os.Stderr, "usage: ccquota <login|connect|set-token|detach|serve|poll|version>")
 		os.Exit(2)
 	}
 	// version 不需要開 DB
@@ -55,6 +56,8 @@ func main() {
 		runLogin(s)
 	case "set-token":
 		runSetToken(s)
+	case "connect":
+		runConnect(s)
 	case "detach":
 		runDetach(s)
 	case "serve":
@@ -330,10 +333,105 @@ func buildNotifierFromStore(s *store.Store, c *secret.Cipher) *alert.Notifier {
 
 func buildPoller(s *store.Store) *poller.Poller {
 	return &poller.Poller{
-		Store: s,
-		Usage: &usage.Client{},
-		OAuth: &oauth.Client{},
+		Store:      s,
+		Usage:      &usage.Client{},
+		OAuth:      &oauth.Client{},
+		RefreshCmd: claudeDoctorRefresh,
 	}
+}
+
+// findClaude 找本機 claude CLI(PATH 或常見安裝路徑)。
+func findClaude() string {
+	if p, err := exec.LookPath("claude"); err == nil {
+		return p
+	}
+	home, _ := os.UserHomeDir()
+	for _, p := range []string{
+		filepath.Join(home, ".local/bin/claude"),
+		"/usr/local/bin/claude",
+		"/opt/homebrew/bin/claude",
+	} {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+// claudeLoggedIn 檢查 claude CLI 是否已登入(讓 connect 可重入,已登入就不再 login)。
+func claudeLoggedIn(bin string) bool {
+	out, err := exec.Command(bin, "auth", "status", "--json").Output()
+	if err != nil {
+		return false
+	}
+	var st struct {
+		LoggedIn bool `json:"loggedIn"`
+	}
+	_ = json.Unmarshal(out, &st)
+	return st.LoggedIn
+}
+
+// claudeCredsPath 回傳 claude CLI 的 creds 檔路徑。
+func claudeCredsPath() string {
+	if d := os.Getenv("CLAUDE_CONFIG_DIR"); d != "" {
+		return filepath.Join(d, ".credentials.json")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".claude", ".credentials.json")
+}
+
+// claudeDoctorRefresh 跑 `claude doctor` 觸發本機 CLI 在快到期時免費 refresh token
+// （不叫 model、不吃 Agent SDK credit)。doctor 是 TUI 會 hang,refresh 啟動就完成,timeout 砍掉即可。
+func claudeDoctorRefresh(ctx context.Context) error {
+	bin := findClaude()
+	if bin == "" {
+		return fmt.Errorf("claude CLI not found")
+	}
+	cctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(cctx, bin, "doctor")
+	_ = cmd.Run() // 被 timeout 砍是預期的,refresh 已完成
+	return nil
+}
+
+// runConnect:在 server 上一鍵接帳號(CLI-backed)。
+// 跑 claude auth login(使用者瀏覽器授權 + 貼 code),然後把帳號設成「讀本機 creds」模式,
+// poller 之後直接讀那顆 token 打 usage、快到期自動 doctor refresh。不碰被限流的 token endpoint。
+func runConnect(s *store.Store) {
+	fs := flag.NewFlagSet("connect", flag.ExitOnError)
+	id := fs.String("id", "main", "account id")
+	label := fs.String("label", "", "human label (defaults to id)")
+	fs.Parse(os.Args[2:])
+	lbl := *label
+	if lbl == "" {
+		lbl = *id
+	}
+
+	bin := findClaude()
+	if bin == "" {
+		log.Fatal("connect: 找不到 claude CLI。請先安裝 Claude Code,再重跑 ccquota connect。")
+	}
+
+	if claudeLoggedIn(bin) {
+		fmt.Println("claude 已登入,直接接上帳號(略過 login)。")
+	} else {
+		fmt.Println("即將執行 claude auth login:請依畫面在瀏覽器授權、把 code 貼回來。")
+		cmd := exec.Command(bin, "auth", "login")
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+		if err := cmd.Run(); err != nil {
+			log.Fatalf("connect: claude auth login 失敗: %v", err)
+		}
+	}
+
+	credsPath := claudeCredsPath()
+	if _, err := os.Stat(credsPath); err != nil {
+		log.Fatalf("connect: 登入後找不到 creds 檔 %s: %v", credsPath, err)
+	}
+	if err := s.UpsertAccount(store.Account{ID: *id, Label: lbl, CredsPath: credsPath}); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("✓ 帳號 %q 已接上(CLI-backed,creds: %s)\n", *id, credsPath)
+	fmt.Println("  ccquota 會直接讀它打 usage,並在快到期時自動 refresh(免費,不叫 model)。")
 }
 
 // resetCallback 回傳 poller 重置事件處理函式:尊重 ResetNotify 開關,
