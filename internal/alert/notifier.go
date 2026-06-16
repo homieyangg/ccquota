@@ -25,54 +25,22 @@ type Config struct {
 	UserShareCrit   float64 // 平分額度 crit 閾值%；預設 250
 }
 
-func (c *Config) lang() string {
-	if c.Lang == "" {
-		return "en"
+// orDefault 在 v 為零值時回傳 def，用來把 Config 零值欄位映射成預設值。
+func orDefault[T comparable](v, def T) T {
+	var zero T
+	if v == zero {
+		return def
 	}
-	return c.Lang
+	return v
 }
 
-func (c *Config) weeklyWarn() float64 {
-	if c.WeeklyWarn == 0 {
-		return 75
-	}
-	return c.WeeklyWarn
-}
-
-func (c *Config) weeklyCrit() float64 {
-	if c.WeeklyCrit == 0 {
-		return 90
-	}
-	return c.WeeklyCrit
-}
-
-func (c *Config) fiveHourCrit() float64 {
-	if c.FiveHourCrit == 0 {
-		return 95
-	}
-	return c.FiveHourCrit
-}
-
-func (c *Config) pollerStaleSec() int64 {
-	if c.PollerStaleSec == 0 {
-		return 1800
-	}
-	return c.PollerStaleSec
-}
-
-func (c *Config) userShareWarn() float64 {
-	if c.UserShareWarn == 0 {
-		return 150
-	}
-	return c.UserShareWarn
-}
-
-func (c *Config) userShareCrit() float64 {
-	if c.UserShareCrit == 0 {
-		return 250
-	}
-	return c.UserShareCrit
-}
+func (c *Config) lang() string           { return orDefault(c.Lang, "en") }
+func (c *Config) weeklyWarn() float64    { return orDefault(c.WeeklyWarn, 75) }
+func (c *Config) weeklyCrit() float64    { return orDefault(c.WeeklyCrit, 90) }
+func (c *Config) fiveHourCrit() float64  { return orDefault(c.FiveHourCrit, 95) }
+func (c *Config) pollerStaleSec() int64  { return orDefault(c.PollerStaleSec, 1800) }
+func (c *Config) userShareWarn() float64 { return orDefault(c.UserShareWarn, 150) }
+func (c *Config) userShareCrit() float64 { return orDefault(c.UserShareCrit, 250) }
 
 // Notifier 發送各類通知至所有已設定的 Sink。
 // 無 Sink 時所有方法為 no-op（安全）。
@@ -128,6 +96,19 @@ func (n *Notifier) mark(account, kind, windowKey string, ts int64) {
 	}
 }
 
+// sendOnce 以 (account, kind, windowKey) 做 dedup：已觸發過就跳過，否則送出並標記。
+// 成功送出才 mark，部分 sink 失敗（sendRendered 回 lastErr）則不 mark，留待下輪重送。
+func (n *Notifier) sendOnce(ctx context.Context, account, kind, windowKey, tmplKey string, args ...any) error {
+	if n.fired(account, kind, windowKey) {
+		return nil
+	}
+	if err := n.sendRendered(ctx, tmplKey, args...); err != nil {
+		return err
+	}
+	n.mark(account, kind, windowKey, 0)
+	return nil
+}
+
 // Reset 發送 7d quota reset 通知（不做 dedup，每次 OnReset 均送）。
 func (n *Notifier) Reset(ctx context.Context, account string, from, to float64) error {
 	if len(n.sinks) == 0 {
@@ -144,33 +125,22 @@ func (n *Notifier) Thresholds(ctx context.Context, account string, sevenDay, fiv
 		return nil
 	}
 
-	// 7d：判斷最高層級（crit > warn）
 	if sevenDay >= n.cfg.weeklyCrit() {
 		wk := fmt.Sprintf("%d:crit", sevenDayResetsAt)
-		if !n.fired(account, "weekly", wk) {
-			if err := n.sendRendered(ctx, "weekly_crit", account, sevenDay); err != nil {
-				return err
-			}
-			n.mark(account, "weekly", wk, 0)
+		if err := n.sendOnce(ctx, account, "weekly", wk, "weekly_crit", account, sevenDay); err != nil {
+			return err
 		}
 	} else if sevenDay >= n.cfg.weeklyWarn() {
 		wk := fmt.Sprintf("%d:warn", sevenDayResetsAt)
-		if !n.fired(account, "weekly", wk) {
-			if err := n.sendRendered(ctx, "weekly_warn", account, sevenDay); err != nil {
-				return err
-			}
-			n.mark(account, "weekly", wk, 0)
+		if err := n.sendOnce(ctx, account, "weekly", wk, "weekly_warn", account, sevenDay); err != nil {
+			return err
 		}
 	}
 
-	// 5h crit
 	if fiveHour >= n.cfg.fiveHourCrit() {
 		wk := fmt.Sprintf("%d", fiveHourResetsAt)
-		if !n.fired(account, "five_hour", wk) {
-			if err := n.sendRendered(ctx, "five_hour_crit", account, fiveHour); err != nil {
-				return err
-			}
-			n.mark(account, "five_hour", wk, 0)
+		if err := n.sendOnce(ctx, account, "five_hour", wk, "five_hour_crit", account, fiveHour); err != nil {
+			return err
 		}
 	}
 
@@ -187,14 +157,7 @@ func (n *Notifier) Stale(ctx context.Context, account string, ageSec int64) erro
 	}
 	bucket := ageSec / 21600 // 6h bucket
 	wk := fmt.Sprintf("%d", bucket)
-	if n.fired(account, "stale", wk) {
-		return nil
-	}
-	if err := n.sendRendered(ctx, "stale", account, ageSec); err != nil {
-		return err
-	}
-	n.mark(account, "stale", wk, 0)
-	return nil
+	return n.sendOnce(ctx, account, "stale", wk, "stale", account, ageSec)
 }
 
 // PollerStaleSec 回傳 stale 判斷閾值秒數（供 main.go 使用）。
@@ -233,14 +196,10 @@ func (n *Notifier) UserShareThresholds(ctx context.Context, account string, user
 		}
 		// window_key 不會被 parse、只比較；user 放末段，內含 ':' 也無害。
 		wk := fmt.Sprintf("%d:%s:%s", sevenDayResetsAt, tier, u.User)
-		if n.fired(account, "user_share", wk) {
-			continue
-		}
 		safeUser := html.EscapeString(u.User)
-		if err := n.sendRendered(ctx, tmplKey, safeUser, u.SharePct, u.Cost, perUserBudget); err != nil {
+		if err := n.sendOnce(ctx, account, "user_share", wk, tmplKey, safeUser, u.SharePct, u.Cost, perUserBudget); err != nil {
 			return err
 		}
-		n.mark(account, "user_share", wk, 0)
 	}
 	return nil
 }

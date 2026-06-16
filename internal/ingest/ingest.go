@@ -4,7 +4,6 @@ package ingest
 
 import (
 	"compress/gzip"
-	"crypto/subtle"
 	"io"
 	"log"
 	"net/http"
@@ -44,31 +43,21 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Auth：token 為空或 Bearer 不符 → 401
 	if len(h.token) == 0 {
 		http.Error(w, "ingest disabled", http.StatusUnauthorized)
 		return
 	}
-	bearer := r.Header.Get("Authorization")
-	const prefix = "Bearer "
-	if len(bearer) <= len(prefix) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	provided := []byte(bearer[len(prefix):])
-	if subtle.ConstantTimeCompare(provided, h.token) != 1 {
+	if !bearerOK(h.token, r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	// 讀 body（支援 gzip）
 	body, useJSON, err := readBody(r)
 	if err != nil {
 		http.Error(w, "read body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	// Unmarshal
 	req := &collectorpb.ExportMetricsServiceRequest{}
 	if useJSON {
 		if err := protojson.Unmarshal(body, req); err != nil {
@@ -82,10 +71,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 解析並寫入
 	h.process(req)
 
-	// 回應
 	resp := &collectorpb.ExportMetricsServiceResponse{}
 	if useJSON {
 		data, _ := protojson.Marshal(resp)
@@ -128,7 +115,6 @@ func (h *handler) process(req *collectorpb.ExportMetricsServiceRequest) {
 	for _, rm := range req.GetResourceMetrics() {
 		account, user, ok := extractAccountUser(rm.GetResource().GetAttributes())
 		if !ok {
-			// account 或 user 缺失，跳過
 			continue
 		}
 		var totalCost float64

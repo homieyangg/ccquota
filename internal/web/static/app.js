@@ -34,6 +34,15 @@ async function apiGet(path) {
   return res.json();
 }
 
+// 解析回應；非 2xx 時用後端 error 欄位（沒有則用狀態碼）丟錯。
+async function apiResult(res) {
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `${res.status}`);
+  }
+  return res.json();
+}
+
 async function apiPost(path, body) {
   const res = await fetch(path, {
     method: 'POST',
@@ -41,11 +50,7 @@ async function apiPost(path, body) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `${res.status}`);
-  }
-  return res.json();
+  return apiResult(res);
 }
 
 async function apiPut(path, body) {
@@ -54,14 +59,12 @@ async function apiPut(path, body) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `${res.status}`); }
-  return res.json();
+  return apiResult(res);
 }
 
 async function apiDelete(path) {
   const res = await fetch(path, { method: 'DELETE', credentials: 'include' });
-  if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `${res.status}`); }
-  return res.json();
+  return apiResult(res);
 }
 
 // ── Sparkline (canvas) ────────────────────────────────────────────────────────
@@ -182,6 +185,11 @@ function drawSeriesChart(canvas, points, valueFn, color, fmt) {
 
 // ── Alpine component ──────────────────────────────────────────────────────────
 
+// 每次回傳新物件，避免初始值與重置共用同一個 reference。
+function defaultNewChannel() {
+  return { type: 'telegram', enabled: true, config: { bot_token: '', chat_id: '', lang: '' } };
+}
+
 document.addEventListener('alpine:init', () => {
   Alpine.data('dashboard', () => ({
     // i18n
@@ -251,7 +259,7 @@ document.addEventListener('alpine:init', () => {
     settingsTab: 'account',
     channels: [],
     thresholds: { SevenDayWarn: 75, SevenDayCrit: 90, FiveHourCrit: 95, ResetNotify: true, UserShareNotify: false, UserShareWarn: 150, UserShareCrit: 250 },
-    newChannel: { type: 'telegram', enabled: true, config: { bot_token: '', chat_id: '', lang: '' } },
+    newChannel: defaultNewChannel(),
     notifMsg: '',
     notifMsgType: '',
 
@@ -424,7 +432,7 @@ document.addEventListener('alpine:init', () => {
       this.notifMsg = '';
       try {
         await apiPost('/api/notifications/channels', this.newChannel);
-        this.newChannel = { type: 'telegram', enabled: true, config: { bot_token: '', chat_id: '', lang: '' } };
+        this.newChannel = defaultNewChannel();
         await this.loadNotifications();
         this.notifMsg = this.t('notif_saved'); this.notifMsgType = 'success';
       } catch (e) { this.notifMsg = e.message; this.notifMsgType = 'error'; }

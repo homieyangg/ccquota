@@ -241,8 +241,7 @@ func adminAuth(s *store.Store, next http.Handler) http.Handler {
 		}
 		// 不送 WWW-Authenticate:否則瀏覽器會跳原生 Basic Auth 彈窗。
 		// curl -u 仍可用(它會預先帶 Authorization header,不需要伺服器宣告)。
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+		jsonError(w, "unauthorized", http.StatusUnauthorized)
 	})
 }
 
@@ -272,8 +271,7 @@ func (h *handler) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setSessionCookie(w, r, token)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	writeJSON(w, map[string]bool{"ok": true})
 }
 
 // handleAuthLogout 清除 session cookie 並刪除 session。
@@ -286,8 +284,7 @@ func (h *handler) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 		globalSessions.delete(c.Value)
 	}
 	clearSessionCookie(w, r)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	writeJSON(w, map[string]bool{"ok": true})
 }
 
 // handleAuthStatus 回傳目前是否已認證，以及是否需要強制改密碼。
@@ -304,8 +301,7 @@ func (h *handler) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	if authed {
 		mustChange = mustChangeFlag(h.s)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, map[string]any{
 		"authed":      authed,
 		"must_change": mustChange,
 	})
@@ -360,8 +356,7 @@ func (h *handler) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "db error", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	writeJSON(w, map[string]bool{"ok": true})
 }
 
 // userCostResp 代表單一使用者的成本明細。
@@ -447,8 +442,7 @@ func (h *handler) handleAccounts(w http.ResponseWriter, r *http.Request) {
 
 		out = append(out, ar)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(out)
+	writeJSON(w, out)
 }
 
 // buildCost 計算帳號的期間成本、反推週額度與每人份額。
@@ -524,8 +518,7 @@ func (h *handler) handleHistory(w http.ResponseWriter, r *http.Request) {
 	for _, r := range readings {
 		out = append(out, historyPoint{TS: r.TS, SevenDay: r.SevenDay, FiveHour: r.FiveHour})
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(out)
+	writeJSON(w, out)
 }
 
 type loginStartReq struct {
@@ -561,8 +554,7 @@ func (h *handler) handleLoginStart(w http.ResponseWriter, r *http.Request) {
 	h.pending[loginID] = pendingLogin{verifier: pkce.Verifier, state: pkce.State, createdAt: time.Now()}
 	h.mu.Unlock()
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	writeJSON(w, map[string]string{
 		"login_id":      loginID,
 		"authorize_url": oauth.AuthorizeURL(pkce),
 	})
@@ -628,8 +620,7 @@ func (h *handler) handleLoginComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+	writeJSON(w, map[string]bool{"ok": true})
 }
 
 type enrollReq struct {
@@ -672,8 +663,7 @@ func (h *handler) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	base := h.baseURL(r)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
+	writeJSON(w, map[string]any{
 		"url":        base + "/e/" + token,
 		"expires_at": expiresAt,
 	})
@@ -902,8 +892,7 @@ func (h *handler) handleUserSeries(w http.ResponseWriter, r *http.Request) {
 			points = append(points, seriesPoint{TS: t, Cost: 0, Tokens: 0})
 		}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"bucket_sec": bucketSec, "points": points})
+	writeJSON(w, map[string]any{"bucket_sec": bucketSec, "points": points})
 }
 
 // handleDeleteUser: DELETE /api/users?account=&user=
@@ -922,6 +911,5 @@ func (h *handler) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "db error", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	writeJSON(w, map[string]string{"status": "ok"})
 }

@@ -70,6 +70,14 @@ func main() {
 	}
 }
 
+// defaultLabel 回傳 label，為空時 fallback 到 id。
+func defaultLabel(label, id string) string {
+	if label != "" {
+		return label
+	}
+	return id
+}
+
 func runLogin(s *store.Store) {
 	fs := flag.NewFlagSet("login", flag.ExitOnError)
 	id := fs.String("id", "", "account id (short handle, e.g. main)")
@@ -78,10 +86,7 @@ func runLogin(s *store.Store) {
 	if *id == "" {
 		log.Fatal("login: --id required")
 	}
-	lbl := *label
-	if lbl == "" {
-		lbl = *id
-	}
+	lbl := defaultLabel(*label, *id)
 	p, err := oauth.NewPKCE()
 	if err != nil {
 		log.Fatal(err)
@@ -126,10 +131,7 @@ func runSetToken(s *store.Store) {
 	if *id == "" {
 		log.Fatal("set-token: --id required")
 	}
-	lbl := *label
-	if lbl == "" {
-		lbl = *id
-	}
+	lbl := defaultLabel(*label, *id)
 
 	now := time.Now().Unix()
 	var at, rt string
@@ -402,10 +404,7 @@ func runConnect(s *store.Store) {
 	id := fs.String("id", "main", "account id")
 	label := fs.String("label", "", "human label (defaults to id)")
 	fs.Parse(os.Args[2:])
-	lbl := *label
-	if lbl == "" {
-		lbl = *id
-	}
+	lbl := defaultLabel(*label, *id)
 
 	bin := findClaude()
 	if bin == "" {
