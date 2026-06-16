@@ -51,6 +51,30 @@ func (h *handler) decryptConfig(raw map[string]string) map[string]string {
 	return dec
 }
 
+// parseChannelConfig 解析頻道 config JSON；格式錯誤時記 log 並回 nil(視同空設定)。
+func parseChannelConfig(config string, chID int64) map[string]string {
+	var raw map[string]string
+	if err := json.Unmarshal([]byte(config), &raw); err != nil {
+		log.Printf("notifications: channel %d bad config json: %v", chID, err)
+	}
+	return raw
+}
+
+// channelConfigMasked 解析、解密並遮蔽某頻道的 config，供 GET 顯示用。
+func (h *handler) channelConfigMasked(ch store.Channel) map[string]string {
+	dec := h.decryptConfig(parseChannelConfig(ch.Config, ch.ID))
+	secrets := secretSet(ch.Type)
+	masked := make(map[string]string, len(dec))
+	for k, v := range dec {
+		if secrets[k] {
+			masked[k] = maskSecret(v)
+		} else {
+			masked[k] = v
+		}
+	}
+	return masked
+}
+
 type channelView struct {
 	ID      int64             `json:"id"`
 	Type    string            `json:"type"`
@@ -71,25 +95,10 @@ func (h *handler) handleNotifications(w http.ResponseWriter, r *http.Request) {
 	}
 	views := make([]channelView, 0, len(chs))
 	for _, ch := range chs {
-		var raw map[string]string
-		if err := json.Unmarshal([]byte(ch.Config), &raw); err != nil {
-			log.Printf("notifications: channel %d bad config json: %v", ch.ID, err)
-		}
-		dec := h.decryptConfig(raw)
-		secrets := secretSet(ch.Type)
-		masked := make(map[string]string, len(dec))
-		for k, v := range dec {
-			if secrets[k] {
-				masked[k] = maskSecret(v)
-			} else {
-				masked[k] = v
-			}
-		}
-		views = append(views, channelView{ID: ch.ID, Type: ch.Type, Enabled: ch.Enabled, Config: masked})
+		views = append(views, channelView{ID: ch.ID, Type: ch.Type, Enabled: ch.Enabled, Config: h.channelConfigMasked(ch)})
 	}
 	th, _ := h.s.GetAlertThresholds()
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"channels": views, "thresholds": th})
+	writeJSON(w, map[string]any{"channels": views, "thresholds": th})
 }
 
 type channelReq struct {
@@ -146,8 +155,7 @@ func (h *handler) handleChannelsCollection(w http.ResponseWriter, r *http.Reques
 		jsonError(w, "db error", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"id": id})
+	writeJSON(w, map[string]any{"id": id})
 }
 
 // handleChannelItem: PUT 更新 / DELETE 刪除 / POST .../test 測試。
@@ -182,10 +190,7 @@ func (h *handler) handleChannelItem(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, "bad json", http.StatusBadRequest)
 			return
 		}
-		var prev map[string]string
-		if err := json.Unmarshal([]byte(cur.Config), &prev); err != nil {
-			log.Printf("notifications: channel %d bad config json: %v", id, err)
-		}
+		prev := parseChannelConfig(cur.Config, id)
 		cfg, err := h.encryptConfig(cur.Type, req.Config, prev)
 		if err != nil {
 			jsonError(w, "encrypt error", http.StatusInternalServerError)
@@ -195,15 +200,13 @@ func (h *handler) handleChannelItem(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, "db error", http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		writeJSON(w, map[string]string{"status": "ok"})
 	case r.Method == http.MethodDelete:
 		if err := h.s.DeleteChannel(id); err != nil {
 			jsonError(w, "db error", http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		writeJSON(w, map[string]string{"status": "ok"})
 	default:
 		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -211,11 +214,7 @@ func (h *handler) handleChannelItem(w http.ResponseWriter, r *http.Request) {
 
 // testChannel 用該頻道送一則測試訊息。
 func (h *handler) testChannel(w http.ResponseWriter, r *http.Request, ch store.Channel) {
-	var raw map[string]string
-	if err := json.Unmarshal([]byte(ch.Config), &raw); err != nil {
-		log.Printf("notifications: channel %d bad config json: %v", ch.ID, err)
-	}
-	dec := h.decryptConfig(raw)
+	dec := h.decryptConfig(parseChannelConfig(ch.Config, ch.ID))
 	sink, err := alert.BuildSink(ch.Type, dec)
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusBadRequest)
@@ -225,12 +224,10 @@ func (h *handler) testChannel(w http.ResponseWriter, r *http.Request, ch store.C
 		// 不可把原始 err 回給 client:transport 失敗時 *url.Error 會帶出
 		// 含 bot token 的完整 URL(…/bot<TOKEN>/sendMessage),只在 server 端記錄。
 		log.Printf("notifications: channel %d test send: %v", ch.ID, err)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": "send failed"})
+		writeJSON(w, map[string]string{"status": "error", "error": "send failed"})
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	writeJSON(w, map[string]string{"status": "ok"})
 }
 
 // handleThresholds: PUT 更新門檻。
@@ -259,6 +256,5 @@ func (h *handler) handleThresholds(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "db error", http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	writeJSON(w, map[string]string{"status": "ok"})
 }

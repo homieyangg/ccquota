@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -15,6 +16,28 @@ import (
 type Sink interface {
 	Send(ctx context.Context, text string) error
 	Lang() string
+}
+
+// post 送出 POST 請求並要求 2xx 狀態碼，client 為 nil 時用 http.DefaultClient。
+// label 用於組裝錯誤訊息（如 "telegram"、"webhook"）。
+func post(ctx context.Context, client *http.Client, label, urlStr, contentType string, body io.Reader) error {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, urlStr, body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", contentType)
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("%s: HTTP %d", label, resp.StatusCode)
+	}
+	return nil
 }
 
 // TelegramSink 透過 Telegram Bot API 發送訊息。
@@ -42,28 +65,8 @@ func (t *TelegramSink) Send(ctx context.Context, text string) error {
 	body.Set("text", text)
 	body.Set("parse_mode", "HTML")
 
-	client := t.HTTP
-	if client == nil {
-		client = http.DefaultClient
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL,
+	return post(ctx, t.HTTP, "telegram", apiURL, "application/x-www-form-urlencoded",
 		strings.NewReader(body.Encode()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("telegram: HTTP %d", resp.StatusCode)
-	}
-	return nil
 }
 
 // WebhookSink 透過 HTTP POST JSON {"text":"..."} 發送訊息。
@@ -81,29 +84,7 @@ func (w *WebhookSink) Send(ctx context.Context, text string) error {
 	if err != nil {
 		return err
 	}
-
-	client := w.HTTP
-	if client == nil {
-		client = http.DefaultClient
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, w.URL,
-		bytes.NewReader(payload))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("webhook: HTTP %d", resp.StatusCode)
-	}
-	return nil
+	return post(ctx, w.HTTP, "webhook", w.URL, "application/json", bytes.NewReader(payload))
 }
 
 // BuildSink 依頻道型別與(已解密的)設定建出對應的 Sink。
