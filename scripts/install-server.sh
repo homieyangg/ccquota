@@ -96,9 +96,20 @@ sleep 2
 
 echo
 echo "ccquota ${tag} is running on ${ADDR}."
-pw=$($sudo_cmd journalctl -u ccquota.service --no-pager 2>/dev/null | grep -oE "auto-generated admin password.*: [a-f0-9]+" | tail -1 || true)
+
+# 只抓「這次啟動」的 log,避免重裝(舊 db 還在)時撈到上一輪的舊密碼。
+inv=$($sudo_cmd systemctl show -p InvocationID --value ccquota.service 2>/dev/null || true)
+if [ -n "$inv" ]; then
+  jlog=$($sudo_cmd journalctl _SYSTEMD_INVOCATION_ID="$inv" --no-pager 2>/dev/null || true)
+else
+  jlog=$($sudo_cmd journalctl -u ccquota.service --no-pager 2>/dev/null || true)
+fi
+pw=$(printf '%s\n' "$jlog" | sed -nE 's/.*auto-generated admin password.*: ([a-f0-9]+).*/\1/p' | tail -1 || true)
+
 if [ -n "$pw" ]; then
-  echo "Admin ${pw}"
+  if [ -t 1 ]; then hi="\033[1;32m"; off="\033[0m"; else hi=""; off=""; fi
+  echo
+  printf "Admin login: user admin / password ${hi}%s${off}\n" "$pw"
   echo "You will be asked to change it on first login."
 else
   echo "Set CCQUOTA_ADMIN_PASSWORD in ${envfile} (then: systemctl restart ccquota) if you need a known password."
