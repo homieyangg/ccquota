@@ -53,13 +53,14 @@ col() {
 }
 seg() { printf '%.0f' "$1"; }
 
+# 用單一 "ccquota" 前綴 + " | " 串接各段(standalone 當整條 statusline 用)。
 out=""
-[ "$fh" != "-1" ] && out="${out}$(col "$fh" "" "$fhc")5h:$(seg "$fh")%${RESET} "
-[ "$sd" != "-1" ] && out="${out}$(col "$sd" "$sdw" "$sdc")7d:$(seg "$sd")%${RESET} "
-[ "$share" != "-1" ] && out="${out}$(col "$share" "$usw" "$usc")me:$(seg "$share")%${RESET}"
+add() { if [ -z "$out" ]; then out="$1"; else out="$out | $1"; fi; }
+[ "$fh" != "-1" ]    && add "$(col "$fh" "" "$fhc")5h:$(seg "$fh")%${RESET}"
+[ "$sd" != "-1" ]    && add "$(col "$sd" "$sdw" "$sdc")7d:$(seg "$sd")%${RESET}"
+[ "$share" != "-1" ] && add "$(col "$share" "$usw" "$usc")me:$(seg "$share")%${RESET}"
 
-out="${out% }"
-[ -z "$out" ] && out='5h:– 7d:–'
+if [ -n "$out" ]; then out="ccquota $out"; else out="ccquota 5h:–"; fi
 mkdir -p "$DIR"
 printf '%s' "$out" > "$CACHE"
 printf '%s' "$out"
