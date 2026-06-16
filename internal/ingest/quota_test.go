@@ -79,17 +79,79 @@ func TestQuotaHandlerSharePct(t *testing.T) {
 	}
 	h := NewQuotaHandler(s, 1800, "secret")
 
-	rr := getQuota(t, h, "account=main&user=alice", "Bearer secret")
+	// alice 花得多(30 > 10),share_pct 應較高;不存在的 user 回 null。
+	aliceShare := quotaShare(t, h, "alice")
+	if aliceShare == nil || *aliceShare <= 0 {
+		t.Fatalf("alice 的 share_pct 應 >0, got %v", aliceShare)
+	}
+	bobShare := quotaShare(t, h, "bob")
+	if bobShare == nil || *bobShare <= 0 {
+		t.Fatalf("bob 的 share_pct 應 >0, got %v", bobShare)
+	}
+	if *aliceShare <= *bobShare {
+		t.Errorf("alice 花得多,share 應 > bob: alice=%v bob=%v", *aliceShare, *bobShare)
+	}
+	if ghostShare := quotaShare(t, h, "ghost"); ghostShare != nil {
+		t.Errorf("不存在的 user,share_pct 應為 null, got %v", *ghostShare)
+	}
+}
+
+// quotaShare 查 main 帳號某 user 的 share_pct(nil = JSON 為 null)。
+func quotaShare(t *testing.T, h http.Handler, user string) *float64 {
+	t.Helper()
+	rr := getQuota(t, h, "account=main&user="+user, "Bearer secret")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", rr.Code)
 	}
 	var resp struct {
 		SharePct *float64 `json:"share_pct"`
 	}
-	json.Unmarshal(rr.Body.Bytes(), &resp)
-	if resp.SharePct == nil || *resp.SharePct <= 0 {
-		t.Errorf("alice 的 share_pct 應 >0, got %v", resp.SharePct)
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
 	}
+	return resp.SharePct
+}
+
+func TestQuotaHandlerStale(t *testing.T) {
+	s, _ := store.Open(":memory:")
+	defer s.Close()
+	now := time.Now().Unix()
+	resetsAt := now + 3*24*3600
+	// stale=1800;old 的 reading TS 比 now 早 2000 秒,超過門檻 → stale。
+	if err := s.InsertReading(store.Reading{
+		AccountID: "old", TS: now - 2000, SevenDay: 50, FiveHour: 10, SevenDayResetsAt: resetsAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.InsertReading(store.Reading{
+		AccountID: "fresh", TS: now, SevenDay: 50, FiveHour: 10, SevenDayResetsAt: resetsAt,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := NewQuotaHandler(s, 1800, "secret")
+
+	if !quotaStale(t, h, "old") {
+		t.Error("舊 reading(TS 早 2000 秒)應為 stale")
+	}
+	if quotaStale(t, h, "fresh") {
+		t.Error("新 reading(TS = now)不應為 stale")
+	}
+}
+
+// quotaStale 查某帳號的 stale 旗標。
+func quotaStale(t *testing.T, h http.Handler, account string) bool {
+	t.Helper()
+	rr := getQuota(t, h, "account="+account, "Bearer secret")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rr.Code)
+	}
+	var resp struct {
+		Stale bool `json:"stale"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	return resp.Stale
 }
 
 func TestQuotaHandlerNoReading(t *testing.T) {
@@ -105,7 +167,9 @@ func TestQuotaHandlerNoReading(t *testing.T) {
 		FiveHour *float64 `json:"five_hour"`
 		SevenDay *float64 `json:"seven_day"`
 	}
-	json.Unmarshal(rr.Body.Bytes(), &resp)
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
 	if resp.FiveHour != nil || resp.SevenDay != nil {
 		t.Errorf("無 reading 時 5h/7d 應為 null: %+v", resp)
 	}
