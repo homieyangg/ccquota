@@ -416,6 +416,15 @@
                         <label x-text="t('notif_chat_id')"></label>
                         <input type="text" x-model="ch.config.chat_id">
                       </div>
+                      <div class="form-row">
+                        <label x-text="t('notif_channel_lang')"></label>
+                        <select x-model="ch.config.lang">
+                          <option value="" x-text="t('notif_lang_inherit')"></option>
+                          <option value="en">English</option>
+                          <option value="zh-TW">繁體中文</option>
+                          <option value="zh-CN">简体中文</option>
+                        </select>
+                      </div>
                     </div>
                   </template>
                   <template x-if="ch.type==='webhook'">
@@ -452,6 +461,15 @@
                       <label x-text="t('notif_chat_id')"></label>
                       <input type="text" x-model="newChannel.config.chat_id">
                     </div>
+                    <div class="form-row">
+                      <label x-text="t('notif_channel_lang')"></label>
+                      <select x-model="newChannel.config.lang">
+                        <option value="" x-text="t('notif_lang_inherit')"></option>
+                        <option value="en">English</option>
+                        <option value="zh-TW">繁體中文</option>
+                        <option value="zh-CN">简体中文</option>
+                      </select>
+                    </div>
                   </div>
                 </template>
                 <template x-if="newChannel.type==='webhook'">
@@ -467,18 +485,21 @@
             <!-- 告警門檻 -->
             <section class="settings-section">
               <h3 class="settings-section-title" x-text="t('notif_thresholds')"></h3>
+
+              <!-- 帳號額度(整個帳號共用的 7d/5h 用量,上限 ~100%) -->
+              <h4 class="settings-subhead" x-text="t('notif_thresholds_account')"></h4>
               <div class="threshold-grid">
                 <div class="form-row">
                   <label x-text="t('notif_seven_day_warn')"></label>
-                  <input type="number" x-model.number="thresholds.SevenDayWarn">
+                  <input type="number" min="0" max="100" step="1" x-model.number="thresholds.SevenDayWarn">
                 </div>
                 <div class="form-row">
                   <label x-text="t('notif_seven_day_crit')"></label>
-                  <input type="number" x-model.number="thresholds.SevenDayCrit">
+                  <input type="number" min="0" max="100" step="1" x-model.number="thresholds.SevenDayCrit">
                 </div>
                 <div class="form-row">
                   <label x-text="t('notif_five_hour_crit')"></label>
-                  <input type="number" x-model.number="thresholds.FiveHourCrit">
+                  <input type="number" min="0" max="100" step="1" x-model.number="thresholds.FiveHourCrit">
                 </div>
               </div>
               <label class="switch switch-row">
@@ -486,6 +507,26 @@
                 <span class="switch-track"><span class="switch-thumb"></span></span>
                 <span class="switch-label" x-text="t('notif_reset_notify')"></span>
               </label>
+
+              <!-- 每人平分額度(advisory,佔比可 >100%,預設關) -->
+              <h4 class="settings-subhead" x-text="t('notif_thresholds_share')"></h4>
+              <p class="settings-caption" x-text="t('notif_share_help')"></p>
+              <label class="switch switch-row">
+                <input type="checkbox" x-model="thresholds.UserShareNotify">
+                <span class="switch-track"><span class="switch-thumb"></span></span>
+                <span class="switch-label" x-text="t('notif_user_share_notify')"></span>
+              </label>
+              <div class="threshold-grid" :style="thresholds.UserShareNotify ? '' : 'opacity:.5'">
+                <div class="form-row">
+                  <label x-text="t('notif_user_share_warn')"></label>
+                  <input type="number" min="0" step="1" x-model.number="thresholds.UserShareWarn" :disabled="!thresholds.UserShareNotify">
+                </div>
+                <div class="form-row">
+                  <label x-text="t('notif_user_share_crit')"></label>
+                  <input type="number" min="0" step="1" x-model.number="thresholds.UserShareCrit" :disabled="!thresholds.UserShareNotify">
+                </div>
+              </div>
+
               <div class="settings-actions">
                 <button type="button" @click="saveThresholds()" x-text="t('notif_save')"></button>
               </div>

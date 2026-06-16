@@ -11,12 +11,17 @@ import (
 )
 
 // captureSink 收集所有 Send 的訊息，供斷言用。
-type captureSink struct{ msgs []string }
+type captureSink struct {
+	msgs []string
+	lang string
+}
 
 func (c *captureSink) Send(_ context.Context, text string) error {
 	c.msgs = append(c.msgs, text)
 	return nil
 }
+
+func (c *captureSink) Lang() string { return c.lang }
 
 func openMemStore(t *testing.T) *store.Store {
 	t.Helper()

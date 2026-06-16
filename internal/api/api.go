@@ -21,6 +21,7 @@ import (
 	"github.com/ccquota/ccquota/internal/calc"
 	"github.com/ccquota/ccquota/internal/oauth"
 	"github.com/ccquota/ccquota/internal/secret"
+	"github.com/ccquota/ccquota/internal/share"
 	"github.com/ccquota/ccquota/internal/store"
 	"github.com/ccquota/ccquota/internal/update"
 )
@@ -416,8 +417,7 @@ func (h *handler) handleAccounts(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// 決定期間起始時間：seven_day_resets_at - 7天；無 reading 則 now - 7天。
-		var sinceTS int64
+		// 決定期間起始時間(與 serve loop 告警共用 share.SinceTS,確保視窗一致)。
 		if ok {
 			ar.HasReading = true
 			ar.SevenDay = &reading.SevenDay
@@ -434,10 +434,8 @@ func (h *handler) handleAccounts(w http.ResponseWriter, r *http.Request) {
 			staleData := now-reading.TS > staleThresh
 			pastReset := reading.SevenDayResetsAt > 0 && now > reading.SevenDayResetsAt
 			ar.Stale = staleData || pastReset
-			sinceTS = reading.SevenDayResetsAt - 7*24*3600
-		} else {
-			sinceTS = now - 7*24*3600
 		}
+		sinceTS := share.SinceTS(reading, ok, now)
 
 		// 計算期間成本與反推週額度。
 		costInfo, err := h.buildCost(a.ID, sinceTS, reading, ok)
@@ -454,48 +452,31 @@ func (h *handler) handleAccounts(w http.ResponseWriter, r *http.Request) {
 }
 
 // buildCost 計算帳號的期間成本、反推週額度與每人份額。
+// per-user 份額計算抽到 share.Compute,與 serve loop 的告警共用同一套(防分岔)。
 func (h *handler) buildCost(accountID string, sinceTS int64, reading store.Reading, hasReading bool) (costResp, error) {
-	const minPct = 5.0
-
-	periodCost, err := h.s.AccountPeriodCost(accountID, sinceTS)
-	if err != nil {
-		return costResp{}, err
-	}
-
-	userCosts, err := h.s.UserPeriodCosts(accountID, sinceTS)
-	if err != nil {
-		return costResp{}, err
-	}
-
-	// 反推週額度：需要 reading 且 7d% >= minPct。
 	var sevenDayPct float64
 	if hasReading {
 		sevenDayPct = reading.SevenDay
 	}
-	weeklyBudget := calc.WeeklyBudget(periodCost, sevenDayPct, minPct)
-
-	// userCount = 有成本的不同使用者數，最少 1。
-	userCount := len(userCosts)
-	if userCount < 1 {
-		userCount = 1
+	res, err := share.Compute(h.s, accountID, sinceTS, sevenDayPct)
+	if err != nil {
+		return costResp{}, err
 	}
-	perUserBudget := calc.PerUserBudget(weeklyBudget, userCount)
 
-	// token 佔比的分母：全體使用者 token 總和。
+	// token 佔比的分母：全體使用者 token 總和(dashboard 專用,告警不需要)。
 	var totalTokens int64
-	for _, uc := range userCosts {
-		totalTokens += uc.Tokens
+	for _, s := range res.Shares {
+		totalTokens += s.Tokens
 	}
 
-	// 建立 user 清單，依 cost 降序排列。
-	users := make([]userCostResp, 0, len(userCosts))
-	for u, uc := range userCosts {
+	users := make([]userCostResp, 0, len(res.Shares))
+	for _, s := range res.Shares {
 		users = append(users, userCostResp{
-			User:          u,
-			CostUSD:       uc.Cost,
-			Tokens:        uc.Tokens,
-			SharePct:      calc.SharePct(uc.Cost, perUserBudget),
-			TokenSharePct: calc.TokenSharePct(uc.Tokens, totalTokens),
+			User:          s.User,
+			CostUSD:       s.Cost,
+			Tokens:        s.Tokens,
+			SharePct:      s.SharePct,
+			TokenSharePct: calc.TokenSharePct(s.Tokens, totalTokens),
 		})
 	}
 	sort.Slice(users, func(i, j int) bool {
@@ -503,9 +484,9 @@ func (h *handler) buildCost(accountID string, sinceTS int64, reading store.Readi
 	})
 
 	return costResp{
-		PeriodCostUSD:    periodCost,
-		WeeklyBudgetUSD:  weeklyBudget,
-		PerUserBudgetUSD: perUserBudget,
+		PeriodCostUSD:    res.PeriodCost,
+		WeeklyBudgetUSD:  res.WeeklyBudget,
+		PerUserBudgetUSD: res.PerUserBudget,
 		Users:            users,
 	}, nil
 }

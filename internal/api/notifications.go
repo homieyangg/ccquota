@@ -244,6 +244,17 @@ func (h *handler) handleThresholds(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "bad json", http.StatusBadRequest)
 		return
 	}
+	// 平分額度門檻:warn 必須小於 crit(否則 warn 永遠不會觸發)。負值視為未設(走預設)。
+	if t.UserShareWarn < 0 {
+		t.UserShareWarn = 0
+	}
+	if t.UserShareCrit < 0 {
+		t.UserShareCrit = 0
+	}
+	if t.UserShareWarn > 0 && t.UserShareCrit > 0 && t.UserShareWarn >= t.UserShareCrit {
+		jsonError(w, "user_share_warn must be less than user_share_crit", http.StatusBadRequest)
+		return
+	}
 	if err := h.s.SetAlertThresholds(t); err != nil {
 		jsonError(w, "db error", http.StatusInternalServerError)
 		return

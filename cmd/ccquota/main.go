@@ -20,6 +20,7 @@ import (
 	"github.com/ccquota/ccquota/internal/oauth"
 	"github.com/ccquota/ccquota/internal/poller"
 	"github.com/ccquota/ccquota/internal/secret"
+	"github.com/ccquota/ccquota/internal/share"
 	"github.com/ccquota/ccquota/internal/store"
 	"github.com/ccquota/ccquota/internal/usage"
 	"github.com/ccquota/ccquota/internal/web"
@@ -311,11 +312,14 @@ func buildNotifierFromStore(s *store.Store, c *secret.Cipher) *alert.Notifier {
 		log.Printf("notifier: thresholds: %v", err)
 	}
 	cfg := alert.Config{
-		Lang:           os.Getenv("CCQUOTA_LANG"),
-		WeeklyWarn:     th.SevenDayWarn,
-		WeeklyCrit:     th.SevenDayCrit,
-		FiveHourCrit:   th.FiveHourCrit,
-		PollerStaleSec: envInt64("CCQUOTA_POLLER_STALE_SEC", 1800),
+		Lang:            os.Getenv("CCQUOTA_LANG"),
+		WeeklyWarn:      th.SevenDayWarn,
+		WeeklyCrit:      th.SevenDayCrit,
+		FiveHourCrit:    th.FiveHourCrit,
+		PollerStaleSec:  envInt64("CCQUOTA_POLLER_STALE_SEC", 1800),
+		UserShareNotify: th.UserShareNotify,
+		UserShareWarn:   th.UserShareWarn,
+		UserShareCrit:   th.UserShareCrit,
 	}
 
 	if len(sinks) == 0 {
@@ -387,6 +391,18 @@ func runServe(s *store.Store) {
 					} else {
 						if err := n.Thresholds(ctx, a.ID, r.SevenDay, r.FiveHour, r.SevenDayResetsAt, r.FiveHourResetsAt); err != nil {
 							log.Printf("alert thresholds error: %v", err)
+						}
+						// per-user 平分額度 advisory(預設關;notifier 內部會檢查啟用與 resets_at)。
+						// 與 dashboard 共用 share.Compute / SinceTS,確保視窗一致、數字不分岔。
+						sinceTS := share.SinceTS(r, true, now)
+						if res, cerr := share.Compute(s, a.ID, sinceTS, r.SevenDay); cerr == nil {
+							ur := make([]alert.UserShareReading, 0, len(res.Shares))
+							for _, sh := range res.Shares {
+								ur = append(ur, alert.UserShareReading{User: sh.User, SharePct: sh.SharePct, Cost: sh.Cost})
+							}
+							if err := n.UserShareThresholds(ctx, a.ID, ur, res.PerUserBudget, r.SevenDayResetsAt); err != nil {
+								log.Printf("alert user-share error: %v", err)
+							}
 						}
 					}
 				}
