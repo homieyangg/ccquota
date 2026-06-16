@@ -37,8 +37,19 @@ trap 'rm -rf "$tmp"' EXIT
 echo "Downloading ${asset} (${tag})..."
 curl -fsSL -o "$tmp/$asset" "$base/$asset"
 if curl -fsSL -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" 2>/dev/null; then
-  ( cd "$tmp" && grep " ${asset}\$" SHA256SUMS | shasum -a 256 -c - ) \
-    || { echo "checksum mismatch" >&2; exit 1; }
+  # Linux 用 sha256sum、macOS 用 shasum,擇一(預設都沒裝就跳過驗證)。
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha_cmd="sha256sum"
+  elif command -v shasum >/dev/null 2>&1; then
+    sha_cmd="shasum -a 256"
+  else
+    sha_cmd=""
+    echo "warning: 找不到 sha256sum/shasum,略過 checksum 驗證" >&2
+  fi
+  if [ -n "$sha_cmd" ]; then
+    ( cd "$tmp" && grep " ${asset}\$" SHA256SUMS | $sha_cmd -c - ) \
+      || { echo "checksum mismatch" >&2; exit 1; }
+  fi
 fi
 chmod +x "$tmp/$asset"
 $sudo_cmd install -m 755 "$tmp/$asset" "$BIN_DIR/ccquota"
