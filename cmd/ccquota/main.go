@@ -539,6 +539,8 @@ func runServe(s *store.Store) {
 	mux.Handle("/v1/token", ingest.NewTokenHandler(s, ingestToken))
 	// 備用:client 也可改自行打 usage、只推結果%(token 不離開本機)。
 	mux.Handle("/v1/usage", ingest.NewUsageHandler(s, ingestToken, resetCallback(s, cipher)))
+	// client statusline 讀額度:回帳號 5h/7d + 個人 share。
+	mux.Handle("/v1/quota", ingest.NewQuotaHandler(s, staleSec, ingestToken))
 
 	mux.Handle("/", web.Handler())
 
