@@ -54,9 +54,11 @@ if [ "$code" != "200" ]; then
   exit 1
 fi
 
-# POST 原始 usage JSON 回 ccquota(server 端用 usage.Parse 解析後寫 reading)
+# POST 原始 usage JSON 回 ccquota(server 端用 usage.Parse 解析後寫 reading)。
+# 自訂 UA:Cloudflare WAF 會擋預設的 curl UA(回 403),換掉就放行。
 pcode=$(curl -sS -o /dev/null -w '%{http_code}' -X POST \
   "${SERVER%/}/v1/usage?account=${ACCOUNT}" \
+  -A "ccquota-usage-push" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   --data "$body")
