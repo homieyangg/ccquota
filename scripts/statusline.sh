@@ -22,7 +22,7 @@ if [ -z "${CCQUOTA_QUOTA_JSON:-}" ] && [ -f "$CACHE" ]; then
 fi
 
 # 取 JSON:測試模式直接用 env,否則 curl(短 timeout)。
-# 自訂 UA:Cloudflare WAF 會擋預設 curl UA(回 403),跟 token-push 同慣例。
+# 自訂 UA:Cloudflare WAF 會擋預設 curl UA(回 403)。
 if [ -n "${CCQUOTA_QUOTA_JSON:-}" ]; then
   json="$CCQUOTA_QUOTA_JSON"
 else

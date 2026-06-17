@@ -114,9 +114,8 @@ func (p *Poller) cycle(ctx context.Context, a store.Account) error {
 	if buf == 0 {
 		buf = 3600
 	}
-	// 只有「自己保管 refresh token」的帳號才自行 refresh;client 餵 token 的帳號
-	// (refresh token 為空)永不碰被限流的 token endpoint,access token 由
-	// POST /v1/token 餵入。退避避免限流時每輪狂重試。
+	// 只有「自己保管 refresh token」的帳號才自行 refresh;沒有 refresh token 的帳號
+	// (例如 CLI-backed)不碰被限流的 token endpoint。退避避免限流時每輪狂重試。
 	if p.OAuth != nil && a.RefreshToken != "" && a.ExpiresAt-now < buf {
 		if !p.refreshAllowed(a.ID, now) {
 			log.Printf("account %s: refresh backing off, skip this cycle", a.ID)
