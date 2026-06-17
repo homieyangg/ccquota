@@ -97,5 +97,15 @@ UPDATED=$(jq '
 
 printf '%s\n' "$UPDATED" > "$SETTINGS_FILE"
 
+# 清掉舊版 installer 掛的 token-push 排程(已停用的帳號額度餵送)
+TP="$HOME/.ccquota/token-push.sh"
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  launchctl bootout "gui/$(id -u)/com.ccquota.token-push" 2>/dev/null || true
+  rm -f "$HOME/Library/LaunchAgents/com.ccquota.token-push.plist"
+else
+  crontab -l 2>/dev/null | grep -v 'ccquota/token-push.sh' | crontab - 2>/dev/null || true
+fi
+rm -f "$TP"
+
 msg done
 msg restart

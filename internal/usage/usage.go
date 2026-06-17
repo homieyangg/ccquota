@@ -75,8 +75,7 @@ func (c *Client) Fetch(ctx context.Context, accessToken string) (Snapshot, error
 	return Parse(body)
 }
 
-// Parse 將 /api/oauth/usage 的回應 JSON 轉成 Snapshot。
-// 供 Fetch（自行拉取）與外部推送端點（POST /v1/usage）共用。
+// Parse 將 /api/oauth/usage 的回應 JSON 轉成 Snapshot,由 Fetch 拉取後呼叫。
 func Parse(body []byte) (Snapshot, error) {
 	var r raw
 	if err := json.Unmarshal(body, &r); err != nil {
