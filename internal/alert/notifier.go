@@ -79,6 +79,13 @@ func (n *Notifier) sendRendered(ctx context.Context, key string, args ...any) er
 	return lastErr
 }
 
+// windowAnchor 把視窗錨點(resets_at,epoch 秒)四捨五入到最近的分鐘。
+// OAuth 端的 sub-second timestamp 轉 epoch 會讓 resets_at 在相鄰兩值間 ±1s 抖動,
+// dedup key 直接吃原始秒數的話一抖就變成新 key → 同一視窗的告警重送。錨到分鐘可吸收抖動。
+func windowAnchor(epoch int64) int64 {
+	return (epoch + 30) / 60
+}
+
 // fired 查詢 dedup，若已觸發回傳 true（error 時視為未觸發，保守策略）。
 func (n *Notifier) fired(account, kind, windowKey string) bool {
 	ok, err := n.store.AlertAlreadyFired(account, kind, windowKey)
@@ -126,19 +133,19 @@ func (n *Notifier) Thresholds(ctx context.Context, account string, sevenDay, fiv
 	}
 
 	if sevenDay >= n.cfg.weeklyCrit() {
-		wk := fmt.Sprintf("%d:crit", sevenDayResetsAt)
+		wk := fmt.Sprintf("%d:crit", windowAnchor(sevenDayResetsAt))
 		if err := n.sendOnce(ctx, account, "weekly", wk, "weekly_crit", account, sevenDay); err != nil {
 			return err
 		}
 	} else if sevenDay >= n.cfg.weeklyWarn() {
-		wk := fmt.Sprintf("%d:warn", sevenDayResetsAt)
+		wk := fmt.Sprintf("%d:warn", windowAnchor(sevenDayResetsAt))
 		if err := n.sendOnce(ctx, account, "weekly", wk, "weekly_warn", account, sevenDay); err != nil {
 			return err
 		}
 	}
 
 	if fiveHour >= n.cfg.fiveHourCrit() {
-		wk := fmt.Sprintf("%d", fiveHourResetsAt)
+		wk := fmt.Sprintf("%d", windowAnchor(fiveHourResetsAt))
 		if err := n.sendOnce(ctx, account, "five_hour", wk, "five_hour_crit", account, fiveHour); err != nil {
 			return err
 		}
@@ -195,7 +202,7 @@ func (n *Notifier) UserShareThresholds(ctx context.Context, account string, user
 			continue
 		}
 		// window_key 不會被 parse、只比較；user 放末段，內含 ':' 也無害。
-		wk := fmt.Sprintf("%d:%s:%s", sevenDayResetsAt, tier, u.User)
+		wk := fmt.Sprintf("%d:%s:%s", windowAnchor(sevenDayResetsAt), tier, u.User)
 		safeUser := html.EscapeString(u.User)
 		if err := n.sendOnce(ctx, account, "user_share", wk, tmplKey, safeUser, u.SharePct, u.Cost, perUserBudget); err != nil {
 			return err

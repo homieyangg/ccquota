@@ -154,6 +154,21 @@ func TestThresholdsDedup(t *testing.T) {
 	}
 }
 
+// TestThresholdsDedupResetsAtJitter:resets_at 因 sub-second timestamp 轉 epoch 會 ±1s 抖動,
+// 同一個視窗的 warn 只該發一次,不能因為錨點抖了 1 秒就重送。
+func TestThresholdsDedupResetsAtJitter(t *testing.T) {
+	s := openMemStore(t)
+	sink := &captureSink{}
+	n := alert.NewNotifier(alert.Config{Lang: "en", WeeklyWarn: 75, WeeklyCrit: 90, FiveHourCrit: 95}, s, sink)
+
+	_ = n.Thresholds(context.Background(), "acct1", 76, 50, 1781841600, 2000)
+	_ = n.Thresholds(context.Background(), "acct1", 77, 50, 1781841599, 2000) // 抖 -1s
+	_ = n.Thresholds(context.Background(), "acct1", 78, 50, 1781841600, 2000) // 抖回來
+	if len(sink.msgs) != 1 {
+		t.Fatalf("resets_at ±1s 抖動應只發一次 warn,得 %d: %v", len(sink.msgs), sink.msgs)
+	}
+}
+
 // --- No sinks configured ---
 
 func TestNotifierNoSinks(t *testing.T) {
