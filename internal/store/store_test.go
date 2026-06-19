@@ -296,6 +296,27 @@ func TestBudgetBaselineRoundTrip(t *testing.T) {
 	}
 }
 
+func TestInsertBackfill(t *testing.T) {
+	s := newTestStore(t)
+	s.InsertUserCost("main", "gary", 1000, 2.0, 300) // 既有 otel 列
+	// 回填 $10 / 5000 tokens
+	if err := s.InsertBackfill("main", "gary", 10.0, 5000, 500); err != nil {
+		t.Fatal(err)
+	}
+	uc, _ := s.UserPeriodCosts("main", 0)
+	if uc["gary"].Tokens != 5300 || uc["gary"].Cost != 12.0 { // 300+5000 tok;$2+$10
+		t.Fatalf("回填後應 tokens=5300 cost=12,得 %d / %v", uc["gary"].Tokens, uc["gary"].Cost)
+	}
+	// 再回填 → 取代而非累加(冪等)
+	if err := s.InsertBackfill("main", "gary", 14.0, 7000, 500); err != nil {
+		t.Fatal(err)
+	}
+	uc, _ = s.UserPeriodCosts("main", 0)
+	if uc["gary"].Tokens != 7300 || uc["gary"].Cost != 16.0 { // 舊 backfill 被取代:$2+$14, 300+7000
+		t.Fatalf("再回填應取代,tokens=7300 cost=16,得 %d / %v", uc["gary"].Tokens, uc["gary"].Cost)
+	}
+}
+
 func TestAlertMessageRoundTrip(t *testing.T) {
 	s := newTestStore(t)
 	if _, ok, err := s.GetAlertMessage("main", "w1", "tg:1"); err != nil || ok {

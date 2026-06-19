@@ -610,3 +610,5 @@ button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.1
   .ch-row-main { flex-wrap: wrap; }
   .ch-row-right { width: 100%; justify-content: flex-end; }
 }
+
+.budget-est { font-size: 11px; font-weight: 500; color: var(--ink-3); margin-left: 5px; }

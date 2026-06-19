@@ -303,6 +303,31 @@ document.addEventListener('alpine:init', () => {
       return 'fill-green';
     },
 
+    // token 模式 = $ 還沒累積夠(冷啟動),但 token 軌已能反推。
+    isTokenMode(cost) {
+      return !!cost && !(cost.weekly_budget_usd > 0) && cost.token_weekly_budget > 0;
+    },
+
+    fmtTokens(n) {
+      if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+      if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+      if (n >= 1e3) return Math.round(n / 1e3) + 'k';
+      return Math.round(n).toString();
+    },
+
+    // 反推週額度顯示:$ 夠用顯示 $,冷啟動只有 token 時顯示 token 估算。
+    budgetText(cost) {
+      if (!cost) return '$0.00';
+      if (cost.weekly_budget_usd > 0) return '$' + cost.weekly_budget_usd.toFixed(2);
+      if (cost.token_weekly_budget > 0) return this.fmtTokens(cost.token_weekly_budget) + ' tok';
+      return '$0.00';
+    },
+
+    // 額度使用率:$ 模式用 share_pct,token 模式改用 token 平分佔比。
+    userBudgetPct(cost, u) {
+      return this.isTokenMode(cost) ? (u.token_budget_pct || 0) : (u.share_pct || 0);
+    },
+
     countdown(resetsAt) {
       if (!resetsAt) return '';
       const diff = resetsAt - Math.floor(Date.now() / 1000);

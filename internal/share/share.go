@@ -39,23 +39,29 @@ type CostSource interface {
 }
 
 // UserShare 是單一使用者的份額(未排序)。
+// SharePct 是 $ 佔比;TokenBudgetPct 是 token 平分佔比(冷啟動沒有 $ 時 dashboard 改用它)。
 type UserShare struct {
-	User     string
-	Cost     float64
-	Tokens   int64
-	SharePct float64
+	User           string
+	Cost           float64
+	Tokens         int64
+	SharePct       float64
+	TokenBudgetPct float64
 }
 
 // Result 是一個帳號的反推結果。
 // WeeklyBudget 是當期原始反推(供顯示與更新高水位);EffectiveBudget 取原始與 baseline 較大者,
 // 是 PerUserBudget / 佔比實際採用的額度(週初原始為 0 時退回 baseline)。
+// Token* 是平行的 token 軌:$ 還沒累積夠(periodCost≈0)時,dashboard 改用 token 反推顯示。
 type Result struct {
-	PeriodCost      float64
-	WeeklyBudget    float64
-	EffectiveBudget float64
-	PerUserBudget   float64
-	UserCount       int
-	Shares          []UserShare
+	PeriodCost         float64
+	WeeklyBudget       float64
+	EffectiveBudget    float64
+	PerUserBudget      float64
+	PeriodTokens       int64
+	TokenWeeklyBudget  float64
+	PerUserTokenBudget float64
+	UserCount          int
+	Shares             []UserShare
 }
 
 // Compute 反推週額度、每人平分額度與各使用者佔比。
@@ -78,21 +84,33 @@ func Compute(s CostSource, accountID string, sinceTS int64, sevenDayPct, baselin
 	}
 	perUserBudget := calc.PerUserBudget(effectiveBudget, userCount)
 
+	// token 平行軌:用各 user 的 token 總和反推,供 $ 還沒夠的冷啟動顯示。
+	var periodTokens int64
+	for _, uc := range userCosts {
+		periodTokens += uc.Tokens
+	}
+	tokenWeeklyBudget := calc.WeeklyBudget(float64(periodTokens), sevenDayPct, MinPct)
+	perUserTokenBudget := calc.PerUserBudget(tokenWeeklyBudget, userCount)
+
 	shares := make([]UserShare, 0, len(userCosts))
 	for u, uc := range userCosts {
 		shares = append(shares, UserShare{
-			User:     u,
-			Cost:     uc.Cost,
-			Tokens:   uc.Tokens,
-			SharePct: calc.SharePct(uc.Cost, perUserBudget),
+			User:           u,
+			Cost:           uc.Cost,
+			Tokens:         uc.Tokens,
+			SharePct:       calc.SharePct(uc.Cost, perUserBudget),
+			TokenBudgetPct: calc.SharePct(float64(uc.Tokens), perUserTokenBudget),
 		})
 	}
 	return Result{
-		PeriodCost:      periodCost,
-		WeeklyBudget:    weeklyBudget,
-		EffectiveBudget: effectiveBudget,
-		PerUserBudget:   perUserBudget,
-		UserCount:       userCount,
-		Shares:          shares,
+		PeriodCost:         periodCost,
+		WeeklyBudget:       weeklyBudget,
+		EffectiveBudget:    effectiveBudget,
+		PerUserBudget:      perUserBudget,
+		PeriodTokens:       periodTokens,
+		TokenWeeklyBudget:  tokenWeeklyBudget,
+		PerUserTokenBudget: perUserTokenBudget,
+		UserCount:          userCount,
+		Shares:             shares,
 	}, nil
 }

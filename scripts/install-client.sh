@@ -132,3 +132,60 @@ printf '%s\n' "$UPDATED" > "$SETTINGS_FILE"
 
 msg done
 msg restart
+
+# ── 冷啟動回填 ────────────────────────────────────────────────────────────────
+# 把本機過去 7 天的用量(token + 用維護中的價格表算的 $)推給 server,讓全新安裝 Day 1
+# 就能反推週額度,免等累積。抓不到價格表就只送 token,dashboard 退回 token 估算。
+# 全程 best-effort:任何一步失敗就安靜略過,不影響安裝。
+LITELLM_PRICES_URL="https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
+backfill_history() {
+  local projects resets now ws pricefile result tokens cost
+  projects="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
+  [[ -d "$projects" ]] || return 0
+  command -v curl >/dev/null 2>&1 || return 0
+  # 對齊帳號 7d 視窗:跟 server 要 seven_day_resets_at(= 下次重置,減 7 天即上次重置=視窗起點)
+  resets=$(curl -fsS -H "Authorization: Bearer $TOKEN" \
+    "$SERVER/v1/quota?account=$ACCOUNT&user=$USER_NAME" 2>/dev/null | jq -r '.seven_day_resets_at // empty' 2>/dev/null) || return 0
+  [[ "$resets" =~ ^[0-9]+$ ]] || return 0
+  now=$(date +%s)
+  ws=$((resets - 7 * 24 * 3600))
+  # 抓維護中的價格表(LiteLLM,ccusage 同源)算 $;抓不到就留空表,$ 會是 0,只送 token。
+  pricefile=$(mktemp)
+  curl -fsSL "$LITELLM_PRICES_URL" -o "$pricefile" 2>/dev/null || echo '{}' > "$pricefile"
+  # 掃 projects/**/*.jsonl,視窗內 assistant 訊息:加總 token(全 type,對齊 live ingest)+ 用 model 查表算 $。
+  # timestamp 去掉小數秒再給 fromdateiso8601;非 UTC/解析失敗或不在表內的單筆,token 仍算、$ 記 0。
+  result=$(cat "$projects"/*/*.jsonl 2>/dev/null | jq -rn \
+    --slurpfile prices "$pricefile" --argjson ws "$ws" --argjson cut "$now" '
+    ($prices[0] // {}) as $p
+    | reduce (inputs
+        | select((.message.usage // null) != null and (.timestamp // null) != null)
+        | (.timestamp | sub("\\.[0-9]+";"")) as $ts
+        | select(($ts | fromdateiso8601) >= $ws and ($ts | fromdateiso8601) < $cut)
+        | .message.usage as $u | ($p[.message.model] // {}) as $pr
+        | { tok: (($u.input_tokens//0)+($u.output_tokens//0)+($u.cache_creation_input_tokens//0)+($u.cache_read_input_tokens//0)),
+            cost: (($u.input_tokens//0)*($pr.input_cost_per_token//0)
+                 + ($u.output_tokens//0)*($pr.output_cost_per_token//0)
+                 + ($u.cache_creation_input_tokens//0)*($pr.cache_creation_input_token_cost//0)
+                 + ($u.cache_read_input_tokens//0)*($pr.cache_read_input_token_cost//0)) }
+      ) as $m ({tok:0,cost:0}; {tok:(.tok+$m.tok), cost:(.cost+$m.cost)})
+    | "\(.tok) \(.cost)"' 2>/dev/null) || { rm -f "$pricefile"; return 0; }
+  rm -f "$pricefile"
+  read -r tokens cost <<< "$result"
+  [[ "$tokens" =~ ^[0-9]+$ && "$tokens" -gt 0 ]] || return 0
+  [[ "$cost" =~ ^[0-9.]+$ ]] || cost=0
+  curl -fsS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d "{\"account\":\"$ACCOUNT\",\"user\":\"$USER_NAME\",\"cost_usd\":$cost,\"tokens\":$tokens,\"window_start\":$ws,\"cutoff\":$now}" \
+    "$SERVER/v1/backfill" >/dev/null 2>&1 || return 0
+  if awk "BEGIN{exit !($cost>0)}" 2>/dev/null; then
+    case "$LANG_SEL" in
+      zh-*) printf '✓ 已回填本機歷史用量(約 $%.2f),冷啟動估算用\n' "$cost" ;;
+      *)    printf '✓ Backfilled local history (~$%.2f) for cold-start estimate\n' "$cost" ;;
+    esac
+  else
+    case "$LANG_SEL" in
+      zh-*) echo "✓ 已回填本機歷史 token($tokens,無價格表),冷啟動估算用" ;;
+      *)    echo "✓ Backfilled $tokens local tokens (no price table) for cold-start estimate" ;;
+    esac
+  fi
+}
+backfill_history || true

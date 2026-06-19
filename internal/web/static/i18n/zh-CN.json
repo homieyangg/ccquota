@@ -35,6 +35,7 @@
   "no_accounts": "尚未配置任何账号。",
   "weekly_budget": "反推周额度",
   "last_week_budget": "上周反推额度",
+  "token_est": "token 估算",
   "per_user_budget": "每人均摊",
   "reverse_calc_note": "由消费额 / 7 日% 反推",
   "share_used": "已用",

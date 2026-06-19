@@ -554,6 +554,8 @@ func runServe(s *store.Store) {
 	mux.Handle("/v1/metrics", ingest.New(s, ingestToken))
 	// client statusline 讀額度:回帳號 5h/7d + 個人 share。
 	mux.Handle("/v1/quota", ingest.NewQuotaHandler(s, staleSec, ingestToken))
+	// client 安裝時回填本機歷史 token,解全新安裝冷啟動。
+	mux.Handle("/v1/backfill", ingest.NewBackfillHandler(s, ingestToken))
 
 	mux.Handle("/", web.Handler())
 
