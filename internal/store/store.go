@@ -124,6 +124,11 @@ CREATE TABLE IF NOT EXISTS channels (
 		!strings.Contains(e.Error(), "duplicate column") {
 		return e
 	}
+	// source 區分 user_cost 來源('otel' live / 'backfill' client 回填),供回填冪等取代。
+	if _, e := s.db.Exec(`ALTER TABLE user_cost ADD COLUMN source TEXT NOT NULL DEFAULT 'otel'`); e != nil &&
+		!strings.Contains(e.Error(), "duplicate column") {
+		return e
+	}
 	return nil
 }
 
@@ -206,6 +211,29 @@ func (s *Store) InsertUserCost(accountID, user string, ts int64, cost float64, t
 		accountID, user, ts, cost, tokens,
 	)
 	return err
+}
+
+// InsertBackfill 寫入 client 回填的歷史 token(cost_usd=0,ts=windowStart),冪等取代同 (account,user)
+// 的舊回填列。一筆同交易:先刪舊 backfill、再插新的,避免重跑時累加。
+func (s *Store) InsertBackfill(accountID, user string, tokens, windowStart int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(
+		`DELETE FROM user_cost WHERE account_id=? AND user=? AND source='backfill'`,
+		accountID, user,
+	); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO user_cost (account_id, user, ts, cost_usd, tokens, source) VALUES (?, ?, ?, 0, ?, 'backfill')`,
+		accountID, user, windowStart, tokens,
+	); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // UserPeriodCosts 回傳 accountID 自 sinceTS 以來，各 user 的累計成本與 token 數。

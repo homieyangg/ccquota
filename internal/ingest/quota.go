@@ -18,11 +18,12 @@ type quotaThresholds struct {
 }
 
 type quotaResp struct {
-	FiveHour   *float64        `json:"five_hour"`
-	SevenDay   *float64        `json:"seven_day"`
-	SharePct   *float64        `json:"share_pct"`
-	Stale      bool            `json:"stale"`
-	Thresholds quotaThresholds `json:"thresholds"`
+	FiveHour         *float64        `json:"five_hour"`
+	SevenDay         *float64        `json:"seven_day"`
+	SevenDayResetsAt *int64          `json:"seven_day_resets_at"`
+	SharePct         *float64        `json:"share_pct"`
+	Stale            bool            `json:"stale"`
+	Thresholds       quotaThresholds `json:"thresholds"`
 }
 
 // NewQuotaHandler 回傳 client statusline 用的額度查詢端點:GET /v1/quota?account=<id>&user=<name>。
@@ -65,6 +66,10 @@ func NewQuotaHandler(s *store.Store, staleSec int64, token string) http.Handler 
 			fh, sd := reading.FiveHour, reading.SevenDay
 			resp.FiveHour = &fh
 			resp.SevenDay = &sd
+			if reading.SevenDayResetsAt > 0 {
+				ra := reading.SevenDayResetsAt
+				resp.SevenDayResetsAt = &ra
+			}
 			staleThresh := staleSec
 			if staleThresh <= 0 {
 				staleThresh = 1800

@@ -80,6 +80,29 @@ func TestComputeWithBaseline(t *testing.T) {
 	}
 }
 
+// TestComputeTokenTrack:$ 冷啟動(periodCost=0)時,token 平行軌仍能反推 token 週額度與每人 token 佔比。
+func TestComputeTokenTrack(t *testing.T) {
+	src := fakeCost{period: 0, users: map[string]store.UserCost{
+		"alice": {Cost: 0, Tokens: 800},
+		"bob":   {Cost: 0, Tokens: 200},
+	}}
+	r, _ := Compute(src, "main", 0, 50, 0)
+	if r.EffectiveBudget != 0 {
+		t.Fatalf("$ 冷啟動應為 0,得 %v", r.EffectiveBudget)
+	}
+	// periodTokens=1000, 7d=50% → token 週額度 2000,2 人 → 人均 1000
+	if r.PeriodTokens != 1000 || r.TokenWeeklyBudget != 2000 || r.PerUserTokenBudget != 1000 {
+		t.Fatalf("token 軌不對: tokens=%v budget=%v perUser=%v", r.PeriodTokens, r.TokenWeeklyBudget, r.PerUserTokenBudget)
+	}
+	got := map[string]float64{}
+	for _, s := range r.Shares {
+		got[s.User] = s.TokenBudgetPct
+	}
+	if got["alice"] != 80 {
+		t.Fatalf("alice token 佔比應 80,得 %v", got["alice"])
+	}
+}
+
 // TestUpdateHWM:只在 7d% ≥ BaselineUpdateMinPct 且「比記錄時的 7d% 更高(離上限更近=反推更準)」
 // 才更新基準。關鍵:7d% 較低時即使 budget 數字更高也不更新,避免突發重置灌水。
 func TestUpdateHWM(t *testing.T) {

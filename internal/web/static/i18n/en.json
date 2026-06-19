@@ -35,6 +35,7 @@
   "no_accounts": "No accounts configured yet.",
   "weekly_budget": "Est. Weekly Budget",
   "last_week_budget": "Last Week's Est.",
+  "token_est": "token est.",
   "per_user_budget": "Per-User Budget",
   "reverse_calc_note": "Reverse-calculated from spend / 7d%",
   "share_used": "used",

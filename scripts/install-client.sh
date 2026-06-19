@@ -132,3 +132,37 @@ printf '%s\n' "$UPDATED" > "$SETTINGS_FILE"
 
 msg done
 msg restart
+
+# ── 冷啟動回填 ────────────────────────────────────────────────────────────────
+# 把本機過去 7 天的 token 推給 server,讓全新安裝 Day 1 就能反推 token 週額度(免等累積)。
+# 全程 best-effort:任何一步失敗就安靜略過,不影響安裝。
+backfill_history() {
+  local projects resets now ws tokens
+  projects="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"
+  [[ -d "$projects" ]] || return 0
+  command -v curl >/dev/null 2>&1 || return 0
+  # 對齊帳號 7d 視窗:跟 server 要 seven_day_resets_at
+  resets=$(curl -fsS -H "Authorization: Bearer $TOKEN" \
+    "$SERVER/v1/quota?account=$ACCOUNT&user=$USER_NAME" 2>/dev/null | jq -r '.seven_day_resets_at // empty' 2>/dev/null) || return 0
+  [[ "$resets" =~ ^[0-9]+$ ]] || return 0
+  now=$(date +%s)
+  ws=$((resets - 7 * 24 * 3600))
+  # 掃 projects/**/*.jsonl,加總視窗內 assistant 訊息的 token(對齊 live ingest:全 type 加總)。
+  # timestamp 去掉小數秒再給 fromdateiso8601;非 UTC/解析失敗的單筆會被略過。
+  tokens=$(cat "$projects"/*/*.jsonl 2>/dev/null | jq -n --argjson ws "$ws" --argjson cut "$now" '
+    reduce (inputs
+      | select((.message.usage // null) != null and (.timestamp // null) != null)
+      | (.timestamp | sub("\\.[0-9]+";"")) as $ts
+      | select(($ts | fromdateiso8601) >= $ws and ($ts | fromdateiso8601) < $cut)
+      | (.message.usage | (.input_tokens//0)+(.output_tokens//0)+(.cache_creation_input_tokens//0)+(.cache_read_input_tokens//0))
+    ) as $t (0; . + $t)' 2>/dev/null) || return 0
+  [[ "$tokens" =~ ^[0-9]+$ && "$tokens" -gt 0 ]] || return 0
+  curl -fsS -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+    -d "{\"account\":\"$ACCOUNT\",\"user\":\"$USER_NAME\",\"tokens\":$tokens,\"window_start\":$ws,\"cutoff\":$now}" \
+    "$SERVER/v1/backfill" >/dev/null 2>&1 || return 0
+  case "$LANG_SEL" in
+    zh-*) echo "✓ 已回填本機歷史 token($tokens),冷啟動估算用" ;;
+    *)    echo "✓ Backfilled $tokens local historical tokens for cold-start estimate" ;;
+  esac
+}
+backfill_history || true

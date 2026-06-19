@@ -361,21 +361,26 @@ func (h *handler) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 
 // userCostResp 代表單一使用者的成本明細。
 // SharePct 是額度使用率（花費 ÷ 人均週額度）；TokenSharePct 是 token 佔全體的比例（加總 100%）。
+// TokenBudgetPct 是 token 平分佔比（$ 還沒夠的冷啟動,dashboard 改用它當「額度使用率」）。
 type userCostResp struct {
-	User          string  `json:"user"`
-	CostUSD       float64 `json:"cost_usd"`
-	Tokens        int64   `json:"tokens"`
-	SharePct      float64 `json:"share_pct"`
-	TokenSharePct float64 `json:"token_share_pct"`
+	User           string  `json:"user"`
+	CostUSD        float64 `json:"cost_usd"`
+	Tokens         int64   `json:"tokens"`
+	SharePct       float64 `json:"share_pct"`
+	TokenSharePct  float64 `json:"token_share_pct"`
+	TokenBudgetPct float64 `json:"token_budget_pct"`
 }
 
 // costResp 代表帳號期間成本與反推週額度資訊。
+// Token* 是平行軌:$ 還沒累積夠（weekly_budget_usd≈0）時,dashboard 改顯示 token 反推額度與佔比。
 type costResp struct {
-	PeriodCostUSD     float64        `json:"period_cost_usd"`
-	WeeklyBudgetUSD   float64        `json:"weekly_budget_usd"`
-	LastWeekBudgetUSD float64        `json:"last_week_budget_usd"`
-	PerUserBudgetUSD  float64        `json:"per_user_budget_usd"`
-	Users             []userCostResp `json:"users"`
+	PeriodCostUSD      float64        `json:"period_cost_usd"`
+	WeeklyBudgetUSD    float64        `json:"weekly_budget_usd"`
+	LastWeekBudgetUSD  float64        `json:"last_week_budget_usd"`
+	PerUserBudgetUSD   float64        `json:"per_user_budget_usd"`
+	TokenWeeklyBudget  float64        `json:"token_weekly_budget"`
+	PerUserTokenBudget float64        `json:"per_user_token_budget"`
+	Users              []userCostResp `json:"users"`
 }
 
 type accountResp struct {
@@ -481,11 +486,12 @@ func (h *handler) buildCost(accountID string, sinceTS, now int64, reading store.
 	for _, s := range res.Shares {
 		seen[s.User] = true
 		users = append(users, userCostResp{
-			User:          s.User,
-			CostUSD:       s.Cost,
-			Tokens:        s.Tokens,
-			SharePct:      s.SharePct,
-			TokenSharePct: calc.TokenSharePct(s.Tokens, totalTokens),
+			User:           s.User,
+			CostUSD:        s.Cost,
+			Tokens:         s.Tokens,
+			SharePct:       s.SharePct,
+			TokenSharePct:  calc.TokenSharePct(s.Tokens, totalTokens),
+			TokenBudgetPct: s.TokenBudgetPct,
 		})
 	}
 
@@ -506,11 +512,13 @@ func (h *handler) buildCost(accountID string, sinceTS, now int64, reading store.
 	})
 
 	return costResp{
-		PeriodCostUSD:     res.PeriodCost,
-		WeeklyBudgetUSD:   res.EffectiveBudget,
-		LastWeekBudgetUSD: lastWeek,
-		PerUserBudgetUSD:  res.PerUserBudget,
-		Users:             users,
+		PeriodCostUSD:      res.PeriodCost,
+		WeeklyBudgetUSD:    res.EffectiveBudget,
+		LastWeekBudgetUSD:  lastWeek,
+		PerUserBudgetUSD:   res.PerUserBudget,
+		TokenWeeklyBudget:  res.TokenWeeklyBudget,
+		PerUserTokenBudget: res.PerUserTokenBudget,
+		Users:              users,
 	}, nil
 }
 

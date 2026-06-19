@@ -158,7 +158,10 @@
                 </div>
                 <div class="sum-metric" x-show="acct.has_reading" style="display:none">
                   <span class="sum-label" x-text="t('weekly_budget')"></span>
-                  <strong x-text="'$' + (acct.cost.weekly_budget_usd || 0).toFixed(2)"></strong>
+                  <strong>
+                    <span x-text="budgetText(acct.cost)"></span>
+                    <span class="budget-est" x-show="isTokenMode(acct.cost)" x-text="t('token_est')" style="display:none"></span>
+                  </strong>
                 </div>
                 <div class="sum-metric" x-show="(acct.cost.last_week_budget_usd || 0) > 0" style="display:none">
                   <span class="sum-label" x-text="t('last_week_budget')"></span>
@@ -198,7 +201,7 @@
                     </div>
                     <div class="uc-budget">
                       <span class="uc-sub-label" x-text="t('user_budget_usage')"></span>
-                      <strong :class="'uc-budget-pct ' + fillClass(u.share_pct)" x-text="u.share_pct.toFixed(1) + '%'"></strong>
+                      <strong :class="'uc-budget-pct ' + fillClass(userBudgetPct(acct.cost, u))" x-text="userBudgetPct(acct.cost, u).toFixed(1) + '%'"></strong>
                     </div>
                     <!-- token 區:本期 token + 佔比(占全體 token,加總 100%) -->
                     <div class="uc-sub">
