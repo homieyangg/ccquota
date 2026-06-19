@@ -10,16 +10,17 @@ import (
 // MinPct:7d% 低於此值代表資料不足以反推,週額度視為 0(週初防亂跳)。
 const MinPct = 5.0
 
-// BaselineUpdateMinPct:只有 7d% ≥ 此值(反推夠準)時才用原始反推抬高水位基準,
-// 避免週初分母太小的 outlier 把基準永久釘高。
+// BaselineUpdateMinPct:7d% 低於此值代表離上限還遠、反推不夠準,不更新基準。
 const BaselineUpdateMinPct = 50.0
 
-// UpdateHWM 回傳更新後的高水位基準:7d% ≥ BaselineUpdateMinPct 且原始反推高於現值才抬高,否則維持。
-func UpdateHWM(currentHWM, rawDerived, sevenDayPct float64) float64 {
-	if sevenDayPct >= BaselineUpdateMinPct && rawDerived > currentHWM {
-		return rawDerived
+// UpdateHWM 回傳更新後的基準與其對應 7d%。
+// 只在 7d% ≥ BaselineUpdateMinPct 且高於記錄時的 7d%(離上限更近=反推更準)才更新。
+// 用「最高 7d% 那刻的反推」而非「最大 budget」,讓 Anthropic 突發重置把 7d% 打低時不更新,免灌水。
+func UpdateHWM(currentHWM, currentHWMPct, rawDerived, sevenDayPct float64) (hwm, hwmPct float64) {
+	if sevenDayPct >= BaselineUpdateMinPct && sevenDayPct > currentHWMPct {
+		return rawDerived, sevenDayPct
 	}
-	return currentHWM
+	return currentHWM, currentHWMPct
 }
 
 // SinceTS 推導期間起點:有 reading 用 7d reset - 7天,否則 now - 7天。

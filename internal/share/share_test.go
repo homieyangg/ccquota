@@ -80,16 +80,18 @@ func TestComputeWithBaseline(t *testing.T) {
 	}
 }
 
-// TestUpdateHWM:只在 7d% ≥ BaselineUpdateMinPct 且原始反推更高時才抬高水位。
+// TestUpdateHWM:只在 7d% ≥ BaselineUpdateMinPct 且「比記錄時的 7d% 更高(離上限更近=反推更準)」
+// 才更新基準。關鍵:7d% 較低時即使 budget 數字更高也不更新,避免突發重置灌水。
 func TestUpdateHWM(t *testing.T) {
-	if got := UpdateHWM(100, 999, 40); got != 100 {
-		t.Errorf("7d%% < 50 不該更新,得 %v", got)
+	if h, p := UpdateHWM(100, 60, 999, 40); h != 100 || p != 60 {
+		t.Errorf("7d%% < 50 不該更新,得 %v/%v", h, p)
 	}
-	if got := UpdateHWM(100, 200, 60); got != 200 {
-		t.Errorf("7d%% ≥ 50 且更高應更新為 200,得 %v", got)
+	if h, p := UpdateHWM(100, 60, 200, 70); h != 200 || p != 70 {
+		t.Errorf("7d%% 更高應更新為 200@70,得 %v/%v", h, p)
 	}
-	if got := UpdateHWM(200, 150, 60); got != 200 {
-		t.Errorf("不比現有高不該更新,得 %v", got)
+	// 突發重置:7d% 從 96 掉到 64,budget 反推被灌高到 999,但 64 < 96 → 不更新。
+	if h, p := UpdateHWM(100, 96, 999, 64); h != 100 || p != 96 {
+		t.Errorf("7d%% 較低即使 budget 更高也不該更新(免灌水),得 %v/%v", h, p)
 	}
 }
 

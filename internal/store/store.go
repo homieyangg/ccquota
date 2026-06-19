@@ -158,13 +158,22 @@ func (s *Store) setFloatSetting(key string, v float64) error {
 	return s.SetSetting(key, strconv.FormatFloat(v, 'f', -1, 64))
 }
 
-// BudgetHWM / SetBudgetHWM:per-account 反推額度高水位基準(只升不降),不存在回 0。
+// BudgetHWM:per-account 反推額度高水位基準值,不存在回 0。
 func (s *Store) BudgetHWM(accountID string) (float64, error) {
 	return s.getFloatSetting("budget_hwm:" + accountID)
 }
 
-func (s *Store) SetBudgetHWM(accountID string, v float64) error {
-	return s.setFloatSetting("budget_hwm:"+accountID, v)
+// BudgetHWMPct:基準是在哪個 7d% 反推出來的(供 UpdateHWM 判斷是否更新),不存在回 0。
+func (s *Store) BudgetHWMPct(accountID string) (float64, error) {
+	return s.getFloatSetting("budget_hwm_pct:" + accountID)
+}
+
+// SetBudgetHWM 同時寫入基準值與其對應 7d%。
+func (s *Store) SetBudgetHWM(accountID string, hwm, pct float64) error {
+	if err := s.setFloatSetting("budget_hwm:"+accountID, hwm); err != nil {
+		return err
+	}
+	return s.setFloatSetting("budget_hwm_pct:"+accountID, pct)
 }
 
 // LastWeekBudget / SetLastWeekBudget:重置時快照的「上週反推額度」,UI 顯示用,不存在回 0。

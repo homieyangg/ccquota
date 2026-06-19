@@ -497,10 +497,11 @@ func runServe(s *store.Store) {
 						// 與 dashboard 共用 share.Compute / SinceTS,確保視窗一致、數字不分岔。
 						sinceTS := share.SinceTS(r, true, now)
 						baseline, _ := s.BudgetHWM(a.ID)
+						baselinePct, _ := s.BudgetHWMPct(a.ID)
 						if res, cerr := share.Compute(s, a.ID, sinceTS, r.SevenDay, baseline); cerr == nil {
-							// 高信心(7d% 夠高)且原始反推更高時,抬高水位基準。
-							if nh := share.UpdateHWM(baseline, res.WeeklyBudget, r.SevenDay); nh != baseline {
-								if err := s.SetBudgetHWM(a.ID, nh); err != nil {
+							// 7d% 比記錄時更高(離上限更近=反推更準)才抬高水位基準。
+							if nh, np := share.UpdateHWM(baseline, baselinePct, res.WeeklyBudget, r.SevenDay); nh != baseline || np != baselinePct {
+								if err := s.SetBudgetHWM(a.ID, nh, np); err != nil {
 									log.Printf("set budget hwm error: %v", err)
 								}
 							}

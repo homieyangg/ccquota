@@ -276,7 +276,7 @@ func TestBudgetBaselineRoundTrip(t *testing.T) {
 	}
 
 	// 寫入後讀回,per-account 各自獨立
-	if err := s.SetBudgetHWM("main", 123.5); err != nil {
+	if err := s.SetBudgetHWM("main", 123.5, 96); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetLastWeekBudget("main", 99.25); err != nil {
@@ -284,6 +284,9 @@ func TestBudgetBaselineRoundTrip(t *testing.T) {
 	}
 	if v, _ := s.BudgetHWM("main"); v != 123.5 {
 		t.Fatalf("hwm 應 123.5,得 %v", v)
+	}
+	if v, _ := s.BudgetHWMPct("main"); v != 96 {
+		t.Fatalf("hwm_pct 應 96,得 %v", v)
 	}
 	if v, _ := s.LastWeekBudget("main"); v != 99.25 {
 		t.Fatalf("lastweek 應 99.25,得 %v", v)

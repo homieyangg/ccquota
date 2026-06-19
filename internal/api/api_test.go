@@ -214,7 +214,7 @@ func TestAccountsCostUsesBaseline(t *testing.T) {
 
 	sinceTS := resetsAt - 7*24*3600
 	_ = s.InsertUserCost("acct1", "alice", sinceTS+10, 12.0, 1000)
-	_ = s.SetBudgetHWM("acct1", 500)
+	_ = s.SetBudgetHWM("acct1", 500, 96)
 	_ = s.SetLastWeekBudget("acct1", 480)
 
 	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
