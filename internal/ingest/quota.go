@@ -75,7 +75,8 @@ func NewQuotaHandler(s *store.Store, staleSec int64, token string) http.Handler 
 
 			if user != "" {
 				sinceTS := share.SinceTS(reading, ok, now)
-				if res, err := share.Compute(s, account, sinceTS, reading.SevenDay); err == nil {
+				baseline, _ := s.BudgetHWM(account)
+				if res, err := share.Compute(s, account, sinceTS, reading.SevenDay, baseline); err == nil {
 					for _, sh := range res.Shares {
 						if sh.User == user {
 							p := sh.SharePct

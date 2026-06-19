@@ -202,6 +202,39 @@ func TestAccountsCostKeepsRecentRoster(t *testing.T) {
 	}
 }
 
+// TestAccountsCostUsesBaseline:週初 7d% < MinPct(原始反推=0)時,dashboard 的週額度退回
+// hwm baseline,並回傳 last_week_budget_usd。證明 baseline 有餵進計算、不再整段空白。
+func TestAccountsCostUsesBaseline(t *testing.T) {
+	s := testStore(t)
+	_ = s.UpsertAccount(store.Account{ID: "acct1", Label: "Test", AccessToken: "a", RefreshToken: "r", ExpiresAt: 9999})
+
+	now := time.Now().Unix()
+	resetsAt := now + 3*24*3600
+	_ = s.InsertReading(store.Reading{AccountID: "acct1", TS: now, SevenDay: 3, FiveHour: 10, SevenDayResetsAt: resetsAt})
+
+	sinceTS := resetsAt - 7*24*3600
+	_ = s.InsertUserCost("acct1", "alice", sinceTS+10, 12.0, 1000)
+	_ = s.SetBudgetHWM("acct1", 500)
+	_ = s.SetLastWeekBudget("acct1", 480)
+
+	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")
+	resp := authedGet(t, h, "/api/accounts")
+	var out []map[string]any
+	json.NewDecoder(resp.Body).Decode(&out)
+	cost, _ := out[0]["cost"].(map[string]any)
+
+	if wb, _ := cost["weekly_budget_usd"].(float64); wb != 500 {
+		t.Errorf("週初應退回 baseline 500,得 %v", wb)
+	}
+	if lw, _ := cost["last_week_budget_usd"].(float64); lw != 480 {
+		t.Errorf("last_week_budget_usd 應 480,得 %v", lw)
+	}
+	// per_user_budget = 500 / 1 user = 500;alice 12/500 = 2.4%
+	if pu, _ := cost["per_user_budget_usd"].(float64); pu != 500 {
+		t.Errorf("per_user_budget 應 500,得 %v", pu)
+	}
+}
+
 func TestAuthRejectsNoCredentials(t *testing.T) {
 	s := testStore(t)
 	h := New(s, &oauth.Client{}, 1800, "", "", testCipher(t), "dev")

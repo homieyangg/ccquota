@@ -371,10 +371,11 @@ type userCostResp struct {
 
 // costResp 代表帳號期間成本與反推週額度資訊。
 type costResp struct {
-	PeriodCostUSD    float64        `json:"period_cost_usd"`
-	WeeklyBudgetUSD  float64        `json:"weekly_budget_usd"`
-	PerUserBudgetUSD float64        `json:"per_user_budget_usd"`
-	Users            []userCostResp `json:"users"`
+	PeriodCostUSD     float64        `json:"period_cost_usd"`
+	WeeklyBudgetUSD   float64        `json:"weekly_budget_usd"`
+	LastWeekBudgetUSD float64        `json:"last_week_budget_usd"`
+	PerUserBudgetUSD  float64        `json:"per_user_budget_usd"`
+	Users             []userCostResp `json:"users"`
 }
 
 type accountResp struct {
@@ -456,7 +457,15 @@ func (h *handler) buildCost(accountID string, sinceTS, now int64, reading store.
 	if hasReading {
 		sevenDayPct = reading.SevenDay
 	}
-	res, err := share.Compute(h.s, accountID, sinceTS, sevenDayPct)
+	baseline, err := h.s.BudgetHWM(accountID)
+	if err != nil {
+		return costResp{}, err
+	}
+	res, err := share.Compute(h.s, accountID, sinceTS, sevenDayPct, baseline)
+	if err != nil {
+		return costResp{}, err
+	}
+	lastWeek, err := h.s.LastWeekBudget(accountID)
 	if err != nil {
 		return costResp{}, err
 	}
@@ -497,10 +506,11 @@ func (h *handler) buildCost(accountID string, sinceTS, now int64, reading store.
 	})
 
 	return costResp{
-		PeriodCostUSD:    res.PeriodCost,
-		WeeklyBudgetUSD:  res.WeeklyBudget,
-		PerUserBudgetUSD: res.PerUserBudget,
-		Users:            users,
+		PeriodCostUSD:     res.PeriodCost,
+		WeeklyBudgetUSD:   res.EffectiveBudget,
+		LastWeekBudgetUSD: lastWeek,
+		PerUserBudgetUSD:  res.PerUserBudget,
+		Users:             users,
 	}, nil
 }
 

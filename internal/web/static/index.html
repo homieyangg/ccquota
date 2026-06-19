@@ -160,6 +160,10 @@
                   <span class="sum-label" x-text="t('weekly_budget')"></span>
                   <strong x-text="'$' + (acct.cost.weekly_budget_usd || 0).toFixed(2)"></strong>
                 </div>
+                <div class="sum-metric" x-show="(acct.cost.last_week_budget_usd || 0) > 0" style="display:none">
+                  <span class="sum-label" x-text="t('last_week_budget')"></span>
+                  <strong x-text="'$' + (acct.cost.last_week_budget_usd || 0).toFixed(2)"></strong>
+                </div>
                 <span class="no-reading" x-show="!acct.has_reading" x-text="t('no_reading')"
                   style="display:none;padding:0;font-size:12px;"></span>
               </div>

@@ -260,6 +260,39 @@ func TestSettingsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBudgetBaselineRoundTrip(t *testing.T) {
+	s, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	// 不存在時回 0
+	if v, err := s.BudgetHWM("main"); err != nil || v != 0 {
+		t.Fatalf("missing hwm 應為 0,得 %v err=%v", v, err)
+	}
+	if v, err := s.LastWeekBudget("main"); err != nil || v != 0 {
+		t.Fatalf("missing lastweek 應為 0,得 %v err=%v", v, err)
+	}
+
+	// 寫入後讀回,per-account 各自獨立
+	if err := s.SetBudgetHWM("main", 123.5); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetLastWeekBudget("main", 99.25); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := s.BudgetHWM("main"); v != 123.5 {
+		t.Fatalf("hwm 應 123.5,得 %v", v)
+	}
+	if v, _ := s.LastWeekBudget("main"); v != 99.25 {
+		t.Fatalf("lastweek 應 99.25,得 %v", v)
+	}
+	if v, _ := s.BudgetHWM("other"); v != 0 {
+		t.Fatalf("別的帳號不該共用,得 %v", v)
+	}
+}
+
 func TestEnrollmentRoundTrip(t *testing.T) {
 	s, err := Open(":memory:")
 	if err != nil {

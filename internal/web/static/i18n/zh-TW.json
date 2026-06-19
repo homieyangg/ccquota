@@ -34,6 +34,7 @@
   "seconds": "秒",
   "no_accounts": "尚未設定任何帳號。",
   "weekly_budget": "反推週額度",
+  "last_week_budget": "上週反推額度",
   "per_user_budget": "每人平分",
   "reverse_calc_note": "由消費額 / 7 日% 反推",
   "share_used": "已用",

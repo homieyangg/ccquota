@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	_ "modernc.org/sqlite"
@@ -138,6 +139,41 @@ func (s *Store) SetSetting(key, value string) error {
 		key, value,
 	)
 	return err
+}
+
+// getFloatSetting 讀 float 設定;不存在或解析失敗回 0。
+func (s *Store) getFloatSetting(key string) (float64, error) {
+	v, ok, err := s.GetSetting(key)
+	if err != nil || !ok {
+		return 0, err
+	}
+	f, perr := strconv.ParseFloat(v, 64)
+	if perr != nil {
+		return 0, nil
+	}
+	return f, nil
+}
+
+func (s *Store) setFloatSetting(key string, v float64) error {
+	return s.SetSetting(key, strconv.FormatFloat(v, 'f', -1, 64))
+}
+
+// BudgetHWM / SetBudgetHWM:per-account 反推額度高水位基準(只升不降),不存在回 0。
+func (s *Store) BudgetHWM(accountID string) (float64, error) {
+	return s.getFloatSetting("budget_hwm:" + accountID)
+}
+
+func (s *Store) SetBudgetHWM(accountID string, v float64) error {
+	return s.setFloatSetting("budget_hwm:"+accountID, v)
+}
+
+// LastWeekBudget / SetLastWeekBudget:重置時快照的「上週反推額度」,UI 顯示用,不存在回 0。
+func (s *Store) LastWeekBudget(accountID string) (float64, error) {
+	return s.getFloatSetting("budget_lastweek:" + accountID)
+}
+
+func (s *Store) SetLastWeekBudget(accountID string, v float64) error {
+	return s.setFloatSetting("budget_lastweek:"+accountID, v)
 }
 
 // UserCost 代表單一 user 在某段期間的累計成本與 token 數。

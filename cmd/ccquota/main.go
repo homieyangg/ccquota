@@ -435,6 +435,12 @@ func runConnect(s *store.Store) {
 // 每次都從 DB 重讀最新頻道設定再送通知。
 func resetCallback(s *store.Store, c *secret.Cipher) func(string, float64, float64) {
 	return func(acct string, from, to float64) {
+		// 重置那刻把高水位基準快照成「上週反推額度」(UI 顯示用);hwm 延續不歸零。
+		if hwm, err := s.BudgetHWM(acct); err == nil && hwm > 0 {
+			if err := s.SetLastWeekBudget(acct, hwm); err != nil {
+				log.Printf("snapshot last-week budget error: %v", err)
+			}
+		}
 		th, _ := s.GetAlertThresholds()
 		if !th.ResetNotify {
 			return
@@ -490,7 +496,14 @@ func runServe(s *store.Store) {
 						// per-user 平分額度 advisory(預設關;notifier 內部會檢查啟用與 resets_at)。
 						// 與 dashboard 共用 share.Compute / SinceTS,確保視窗一致、數字不分岔。
 						sinceTS := share.SinceTS(r, true, now)
-						if res, cerr := share.Compute(s, a.ID, sinceTS, r.SevenDay); cerr == nil {
+						baseline, _ := s.BudgetHWM(a.ID)
+						if res, cerr := share.Compute(s, a.ID, sinceTS, r.SevenDay, baseline); cerr == nil {
+							// 高信心(7d% 夠高)且原始反推更高時,抬高水位基準。
+							if nh := share.UpdateHWM(baseline, res.WeeklyBudget, r.SevenDay); nh != baseline {
+								if err := s.SetBudgetHWM(a.ID, nh); err != nil {
+									log.Printf("set budget hwm error: %v", err)
+								}
+							}
 							ur := make([]alert.UserShareReading, 0, len(res.Shares))
 							for _, sh := range res.Shares {
 								ur = append(ur, alert.UserShareReading{User: sh.User, SharePct: sh.SharePct, Cost: sh.Cost})
