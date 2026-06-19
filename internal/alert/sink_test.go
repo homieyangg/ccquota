@@ -19,7 +19,7 @@ func TestTelegramSink(t *testing.T) {
 		gotPath = r.URL.Path
 		b, _ := io.ReadAll(r.Body)
 		gotBody = string(b)
-		w.WriteHeader(200)
+		w.Write([]byte(`{"ok":true,"result":{"message_id":555}}`))
 	}))
 	defer srv.Close()
 
@@ -29,8 +29,12 @@ func TestTelegramSink(t *testing.T) {
 		BaseURL: srv.URL,
 		HTTP:    srv.Client(),
 	}
-	if err := sink.Send(context.Background(), "hello <b>world</b>"); err != nil {
+	ref, err := sink.Send(context.Background(), "hello <b>world</b>")
+	if err != nil {
 		t.Fatal(err)
+	}
+	if ref != "555" {
+		t.Errorf("ref: got %q want 555 (message_id)", ref)
 	}
 
 	wantPath := "/botmytoken/sendMessage"
@@ -72,7 +76,7 @@ func TestWebhookSink(t *testing.T) {
 		URL:  srv.URL,
 		HTTP: srv.Client(),
 	}
-	if err := sink.Send(context.Background(), "test msg"); err != nil {
+	if _, err := sink.Send(context.Background(), "test msg"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -92,9 +96,38 @@ func TestTelegramSinkHTTPError(t *testing.T) {
 	defer srv.Close()
 
 	sink := &alert.TelegramSink{Token: "t", ChatID: "c", BaseURL: srv.URL, HTTP: srv.Client()}
-	err := sink.Send(context.Background(), "msg")
-	if err == nil {
+	if _, err := sink.Send(context.Background(), "msg"); err == nil {
 		t.Fatal("expected error on HTTP 400")
+	}
+}
+
+func TestTelegramSinkEdit(t *testing.T) {
+	var gotPath, gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+
+	sink := &alert.TelegramSink{Token: "tk", ChatID: "99", BaseURL: srv.URL, HTTP: srv.Client()}
+	if err := sink.Edit(context.Background(), "555", "updated"); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/bottk/editMessageText" {
+		t.Errorf("path: got %q", gotPath)
+	}
+	vals, _ := url.ParseQuery(gotBody)
+	if vals.Get("message_id") != "555" || vals.Get("text") != "updated" {
+		t.Errorf("edit body: %q", gotBody)
+	}
+}
+
+func TestWebhookSinkEditUnsupported(t *testing.T) {
+	sink := &alert.WebhookSink{URL: "http://x"}
+	if err := sink.Edit(context.Background(), "ref", "txt"); err != alert.ErrEditUnsupported {
+		t.Fatalf("want ErrEditUnsupported, got %v", err)
 	}
 }
 

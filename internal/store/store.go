@@ -82,6 +82,14 @@ CREATE TABLE IF NOT EXISTS alert_state (
   fired_at INTEGER NOT NULL,
   PRIMARY KEY (account_id, kind, window_key)
 );
+CREATE TABLE IF NOT EXISTS alert_message (
+  account_id TEXT NOT NULL,
+  window TEXT NOT NULL,
+  sink_key TEXT NOT NULL,
+  ref TEXT NOT NULL,
+  tier TEXT NOT NULL,
+  PRIMARY KEY (account_id, window, sink_key)
+);
 CREATE TABLE IF NOT EXISTS user_cost (
   account_id TEXT NOT NULL,
   user TEXT NOT NULL,
@@ -334,6 +342,39 @@ func (s *Store) AlertAlreadyFired(account, kind, windowKey string) (bool, error)
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// AlertMessage 是某 sink 在某視窗已送出的告警訊息狀態,供 warn→crit 就地編輯與跨層級 dedup。
+type AlertMessage struct {
+	Ref  string
+	Tier string
+}
+
+// GetAlertMessage 回傳 (account, window, sinkKey) 已送訊息的 ref 與 tier;不存在 ok=false。
+func (s *Store) GetAlertMessage(account, window, sinkKey string) (AlertMessage, bool, error) {
+	var m AlertMessage
+	err := s.db.QueryRow(
+		`SELECT ref, tier FROM alert_message WHERE account_id=? AND window=? AND sink_key=?`,
+		account, window, sinkKey,
+	).Scan(&m.Ref, &m.Tier)
+	if err == sql.ErrNoRows {
+		return AlertMessage{}, false, nil
+	}
+	if err != nil {
+		return AlertMessage{}, false, err
+	}
+	return m, true, nil
+}
+
+// UpsertAlertMessage 記錄/更新某 sink 在某視窗已送訊息的 ref 與 tier。
+func (s *Store) UpsertAlertMessage(account, window, sinkKey, ref, tier string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO alert_message (account_id, window, sink_key, ref, tier)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(account_id, window, sink_key) DO UPDATE SET ref=excluded.ref, tier=excluded.tier`,
+		account, window, sinkKey, ref, tier,
+	)
+	return err
 }
 
 // CreateEnrollment 建立一筆一次性 enrollment token。

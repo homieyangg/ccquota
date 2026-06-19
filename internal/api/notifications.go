@@ -220,7 +220,7 @@ func (h *handler) testChannel(w http.ResponseWriter, r *http.Request, ch store.C
 		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := sink.Send(r.Context(), "ccquota test message ✅"); err != nil {
+	if _, err := sink.Send(r.Context(), "ccquota test message ✅"); err != nil {
 		// 不可把原始 err 回給 client:transport 失敗時 *url.Error 會帶出
 		// 含 bot token 的完整 URL(…/bot<TOKEN>/sendMessage),只在 server 端記錄。
 		log.Printf("notifications: channel %d test send: %v", ch.ID, err)

@@ -490,21 +490,27 @@ func runServe(s *store.Store) {
 							log.Printf("alert stale error: %v", err)
 						}
 					} else {
-						if err := n.Thresholds(ctx, a.ID, r.SevenDay, r.FiveHour, r.SevenDayResetsAt, r.FiveHourResetsAt); err != nil {
-							log.Printf("alert thresholds error: %v", err)
-						}
-						// per-user 平分額度 advisory(預設關;notifier 內部會檢查啟用與 resets_at)。
+						// 先算 share(順便抬高水位基準),weekly 告警的反推額度/本週剩餘要用。
 						// 與 dashboard 共用 share.Compute / SinceTS,確保視窗一致、數字不分岔。
 						sinceTS := share.SinceTS(r, true, now)
 						baseline, _ := s.BudgetHWM(a.ID)
 						baselinePct, _ := s.BudgetHWMPct(a.ID)
-						if res, cerr := share.Compute(s, a.ID, sinceTS, r.SevenDay, baseline); cerr == nil {
+						res, cerr := share.Compute(s, a.ID, sinceTS, r.SevenDay, baseline)
+						var weeklyBudget, periodCost float64
+						if cerr == nil {
+							weeklyBudget, periodCost = res.EffectiveBudget, res.PeriodCost
 							// 7d% 比記錄時更高(離上限更近=反推更準)才抬高水位基準。
 							if nh, np := share.UpdateHWM(baseline, baselinePct, res.WeeklyBudget, r.SevenDay); nh != baseline || np != baselinePct {
 								if err := s.SetBudgetHWM(a.ID, nh, np); err != nil {
 									log.Printf("set budget hwm error: %v", err)
 								}
 							}
+						}
+						if err := n.Thresholds(ctx, a.ID, r.SevenDay, r.FiveHour, weeklyBudget, periodCost, r.SevenDayResetsAt, r.FiveHourResetsAt); err != nil {
+							log.Printf("alert thresholds error: %v", err)
+						}
+						// per-user 平分額度 advisory(預設關;notifier 內部會檢查啟用與 resets_at)。
+						if cerr == nil {
 							ur := make([]alert.UserShareReading, 0, len(res.Shares))
 							for _, sh := range res.Shares {
 								ur = append(ur, alert.UserShareReading{User: sh.User, SharePct: sh.SharePct, Cost: sh.Cost})

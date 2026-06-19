@@ -10,18 +10,39 @@ import (
 	"github.com/ccquota/ccquota/internal/store"
 )
 
-// captureSink 收集所有 Send 的訊息，供斷言用。
+// captureSink 收集所有 Send / Edit 的訊息,供斷言用。
+// Send 回傳遞增的 ref(模擬 Telegram message_id),Edit 記在 edits。
 type captureSink struct {
-	msgs []string
-	lang string
+	msgs   []string
+	edits  []string
+	lang   string
+	key    string
+	refN   int
+	noEdit bool // true 模擬不支援 edit 的 sink(如 webhook)
 }
 
-func (c *captureSink) Send(_ context.Context, text string) error {
+func (c *captureSink) Send(_ context.Context, text string) (string, error) {
 	c.msgs = append(c.msgs, text)
+	c.refN++
+	return fmt.Sprintf("ref%d", c.refN), nil
+}
+
+func (c *captureSink) Edit(_ context.Context, ref, text string) error {
+	if c.noEdit {
+		return alert.ErrEditUnsupported
+	}
+	c.edits = append(c.edits, ref+"|"+text)
 	return nil
 }
 
 func (c *captureSink) Lang() string { return c.lang }
+
+func (c *captureSink) Key() string {
+	if c.key != "" {
+		return c.key
+	}
+	return "cap"
+}
 
 func openMemStore(t *testing.T) *store.Store {
 	t.Helper()
@@ -94,6 +115,17 @@ func TestNotifierReset(t *testing.T) {
 	}
 }
 
+// TestWeeklyTemplateWithBudget:weekly 文案帶上反推額度與本週剩餘。
+func TestWeeklyTemplateWithBudget(t *testing.T) {
+	suffix := alert.RenderTemplate("zh-TW", "weekly_budget_suffix", 892.0, 214.0)
+	msg := alert.RenderTemplate("zh-TW", "weekly_warn", "main", 76.0, suffix)
+	for _, want := range []string{"76%", "892", "214"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("文案缺 %q: %q", want, msg)
+		}
+	}
+}
+
 // --- Thresholds dedup ---
 
 func TestThresholdsDedup(t *testing.T) {
@@ -106,51 +138,67 @@ func TestThresholdsDedup(t *testing.T) {
 		FiveHourCrit: 95,
 	}, s, sink)
 
-	// 7d=76% (>warn, <crit), 5h=50% (ok), 應發 warn
-	if err := n.Thresholds(context.Background(), "acct1", 76, 50, 1000, 2000); err != nil {
+	// 76% → warn,送一則
+	if err := n.Thresholds(context.Background(), "acct1", 76, 50, 0, 0, 1000, 2000); err != nil {
 		t.Fatal(err)
 	}
-	if len(sink.msgs) != 1 {
-		t.Fatalf("first call: want 1 msg, got %d: %v", len(sink.msgs), sink.msgs)
-	}
-	if !strings.Contains(sink.msgs[0], "Warning") {
-		t.Errorf("expected Warning, got: %q", sink.msgs[0])
+	if len(sink.msgs) != 1 || !strings.Contains(sink.msgs[0], "Warning") {
+		t.Fatalf("warn: msgs=%v", sink.msgs)
 	}
 
-	// 同一視窗再呼叫 → dedup，不重送
-	_ = n.Thresholds(context.Background(), "acct1", 78, 50, 1000, 2000)
+	// 78% 同視窗 → 已 warn,不動
+	_ = n.Thresholds(context.Background(), "acct1", 78, 50, 0, 0, 1000, 2000)
 	if len(sink.msgs) != 1 {
-		t.Fatalf("dedup: want still 1 msg, got %d", len(sink.msgs))
+		t.Fatalf("warn dedup: want 1 msg, got %d", len(sink.msgs))
 	}
 
-	// 7d=91% (>crit), 同視窗 → crit 尚未 fired，應發 crit（warn 已 fired 不再發）
-	_ = n.Thresholds(context.Background(), "acct1", 91, 50, 1000, 2000)
+	// 91% 同視窗 → 升 crit:就地編輯,不新發
+	_ = n.Thresholds(context.Background(), "acct1", 91, 50, 0, 0, 1000, 2000)
+	if len(sink.msgs) != 1 {
+		t.Fatalf("escalate 不該新發,msgs=%d", len(sink.msgs))
+	}
+	if len(sink.edits) != 1 || !strings.Contains(sink.edits[0], "Critical") {
+		t.Fatalf("escalate 應 edit 成 crit,edits=%v", sink.edits)
+	}
+
+	// 已 crit 同視窗 → 不動
+	_ = n.Thresholds(context.Background(), "acct1", 95, 50, 0, 0, 1000, 2000)
+	if len(sink.edits) != 1 {
+		t.Fatalf("已 crit 不該再 edit,edits=%d", len(sink.edits))
+	}
+
+	// 新視窗 → warn re-arm,新發一則
+	_ = n.Thresholds(context.Background(), "acct1", 76, 50, 0, 0, 9999, 2000)
 	if len(sink.msgs) != 2 {
-		t.Fatalf("crit: want 2 msgs, got %d: %v", len(sink.msgs), sink.msgs)
-	}
-	if !strings.Contains(sink.msgs[1], "Critical") {
-		t.Errorf("expected Critical, got: %q", sink.msgs[1])
-	}
-
-	// 新視窗 (sevenDayResetsAt=9999) → warn re-arm
-	_ = n.Thresholds(context.Background(), "acct1", 76, 50, 9999, 2000)
-	if len(sink.msgs) != 3 {
-		t.Fatalf("re-arm: want 3 msgs, got %d: %v", len(sink.msgs), sink.msgs)
+		t.Fatalf("新視窗 re-arm,msgs=%d", len(sink.msgs))
 	}
 
 	// 5h crit
-	_ = n.Thresholds(context.Background(), "acct1", 10, 96, 9999, 2000)
-	if len(sink.msgs) != 4 {
-		t.Fatalf("5h crit: want 4 msgs, got %d: %v", len(sink.msgs), sink.msgs)
-	}
-	if !strings.Contains(sink.msgs[3], "5-Hour") {
-		t.Errorf("expected 5-Hour, got: %q", sink.msgs[3])
+	_ = n.Thresholds(context.Background(), "acct1", 10, 96, 0, 0, 9999, 2000)
+	if len(sink.msgs) != 3 || !strings.Contains(sink.msgs[2], "5-Hour") {
+		t.Fatalf("5h crit,msgs=%v", sink.msgs)
 	}
 
 	// 5h 同視窗再觸發 → dedup
-	_ = n.Thresholds(context.Background(), "acct1", 10, 97, 9999, 2000)
-	if len(sink.msgs) != 4 {
-		t.Fatalf("5h dedup: want still 4 msgs, got %d", len(sink.msgs))
+	_ = n.Thresholds(context.Background(), "acct1", 10, 97, 0, 0, 9999, 2000)
+	if len(sink.msgs) != 3 {
+		t.Fatalf("5h dedup,msgs=%d", len(sink.msgs))
+	}
+}
+
+// TestWeeklyEscalateWebhookDegrade:不支援 edit 的 sink(webhook)升級時退化成重送一則 crit。
+func TestWeeklyEscalateWebhookDegrade(t *testing.T) {
+	s := openMemStore(t)
+	sink := &captureSink{noEdit: true}
+	n := alert.NewNotifier(alert.Config{Lang: "en", WeeklyWarn: 75, WeeklyCrit: 90, FiveHourCrit: 95}, s, sink)
+
+	_ = n.Thresholds(context.Background(), "acct1", 76, 0, 0, 0, 1000, 2000) // warn → send
+	_ = n.Thresholds(context.Background(), "acct1", 91, 0, 0, 0, 1000, 2000) // crit,edit 不支援 → 退化重送
+	if len(sink.msgs) != 2 {
+		t.Fatalf("不支援 edit 應退化重送,msgs=%d", len(sink.msgs))
+	}
+	if !strings.Contains(sink.msgs[1], "Critical") {
+		t.Errorf("退化重送應為 crit,得 %q", sink.msgs[1])
 	}
 }
 
@@ -161,9 +209,9 @@ func TestThresholdsDedupResetsAtJitter(t *testing.T) {
 	sink := &captureSink{}
 	n := alert.NewNotifier(alert.Config{Lang: "en", WeeklyWarn: 75, WeeklyCrit: 90, FiveHourCrit: 95}, s, sink)
 
-	_ = n.Thresholds(context.Background(), "acct1", 76, 50, 1781841600, 2000)
-	_ = n.Thresholds(context.Background(), "acct1", 77, 50, 1781841599, 2000) // 抖 -1s
-	_ = n.Thresholds(context.Background(), "acct1", 78, 50, 1781841600, 2000) // 抖回來
+	_ = n.Thresholds(context.Background(), "acct1", 76, 50, 0, 0, 1781841600, 2000)
+	_ = n.Thresholds(context.Background(), "acct1", 77, 50, 0, 0, 1781841599, 2000) // 抖 -1s
+	_ = n.Thresholds(context.Background(), "acct1", 78, 50, 0, 0, 1781841600, 2000) // 抖回來
 	if len(sink.msgs) != 1 {
 		t.Fatalf("resets_at ±1s 抖動應只發一次 warn,得 %d: %v", len(sink.msgs), sink.msgs)
 	}
@@ -179,7 +227,7 @@ func TestNotifierNoSinks(t *testing.T) {
 	if err := n.Reset(context.Background(), "acct1", 80, 5); err != nil {
 		t.Fatal(err)
 	}
-	if err := n.Thresholds(context.Background(), "acct1", 80, 80, 1000, 2000); err != nil {
+	if err := n.Thresholds(context.Background(), "acct1", 80, 80, 0, 0, 1000, 2000); err != nil {
 		t.Fatal(err)
 	}
 	if err := n.Stale(context.Background(), "acct1", 1900); err != nil {

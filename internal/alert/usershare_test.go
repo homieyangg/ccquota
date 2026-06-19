@@ -11,8 +11,13 @@ import (
 // failSink 永遠送失敗,且記錄送了幾次,用來驗 mark-on-error 契約。
 type failSink struct{ sends int }
 
-func (f *failSink) Send(_ context.Context, _ string) error { f.sends++; return context.Canceled }
-func (f *failSink) Lang() string                           { return "" }
+func (f *failSink) Send(_ context.Context, _ string) (string, error) {
+	f.sends++
+	return "", context.Canceled
+}
+func (f *failSink) Edit(_ context.Context, _, _ string) error { return alert.ErrEditUnsupported }
+func (f *failSink) Lang() string                              { return "" }
+func (f *failSink) Key() string                               { return "fail" }
 
 func usEnabledCfg() alert.Config {
 	return alert.Config{UserShareNotify: true, UserShareWarn: 150, UserShareCrit: 250}

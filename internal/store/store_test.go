@@ -296,6 +296,26 @@ func TestBudgetBaselineRoundTrip(t *testing.T) {
 	}
 }
 
+func TestAlertMessageRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	if _, ok, err := s.GetAlertMessage("main", "w1", "tg:1"); err != nil || ok {
+		t.Fatalf("missing 應 ok=false,得 ok=%v err=%v", ok, err)
+	}
+	if err := s.UpsertAlertMessage("main", "w1", "tg:1", "555", "warn"); err != nil {
+		t.Fatal(err)
+	}
+	m, ok, _ := s.GetAlertMessage("main", "w1", "tg:1")
+	if !ok || m.Ref != "555" || m.Tier != "warn" {
+		t.Fatalf("got %+v ok=%v", m, ok)
+	}
+	// 升級覆蓋 tier,ref 不變
+	_ = s.UpsertAlertMessage("main", "w1", "tg:1", "555", "crit")
+	m2, _, _ := s.GetAlertMessage("main", "w1", "tg:1")
+	if m2.Tier != "crit" {
+		t.Fatalf("升級後 tier 應 crit,得 %q", m2.Tier)
+	}
+}
+
 func TestEnrollmentRoundTrip(t *testing.T) {
 	s, err := Open(":memory:")
 	if err != nil {
