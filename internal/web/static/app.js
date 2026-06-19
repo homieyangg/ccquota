@@ -256,7 +256,9 @@ document.addEventListener('alpine:init', () => {
     mustChangeBtnDisabled: false,
 
     // notifications
-    settingsTab: 'account',
+    settingsOpen: false,
+    editingChannelId: null, // 展開編輯中的頻道 id；null = 全收合
+    showAddChannel: false,  // 是否展開「新增頻道」表單
     channels: [],
     thresholds: { SevenDayWarn: 75, SevenDayCrit: 90, FiveHourCrit: 95, ResetNotify: true, UserShareNotify: false, UserShareWarn: 150, UserShareCrit: 250 },
     newChannel: defaultNewChannel(),
@@ -401,13 +403,55 @@ document.addEventListener('alpine:init', () => {
       this.settingsMsg = '';
       this.settingsMsgType = '';
       this.settingsBtnDisabled = false;
-      this.settingsTab = 'account';
+      this.notifMsg = '';
+      this.editingChannelId = null;
+      this.showAddChannel = false;
+      this.newChannel = defaultNewChannel();
       this.loadNotifications();
-      this.$refs.settingsDialog && this.$refs.settingsDialog.showModal();
+      this.settingsOpen = true;
+      window.scrollTo(0, 0);
     },
 
     closeSettingsModal() {
-      this.$refs.settingsDialog && this.$refs.settingsDialog.close();
+      this.settingsOpen = false;
+    },
+
+    // 帳號額度告警是否啟用:後端用 101 代表關閉(無 enabled 旗標),這裡用門檻值反推開關。
+    get accountAlertsOn() {
+      return this.thresholds.SevenDayWarn <= 100 || this.thresholds.SevenDayCrit <= 100;
+    },
+
+    // 切換帳號額度告警:關 → 三個門檻設 101(後端視為停用);開 → 還原預設(若目前是停用值)。
+    toggleAccountAlerts(on) {
+      if (on) {
+        if (this.thresholds.SevenDayWarn > 100) this.thresholds.SevenDayWarn = 75;
+        if (this.thresholds.SevenDayCrit > 100) this.thresholds.SevenDayCrit = 90;
+        if (this.thresholds.FiveHourCrit > 100) this.thresholds.FiveHourCrit = 95;
+      } else {
+        this.thresholds.SevenDayWarn = 101;
+        this.thresholds.SevenDayCrit = 101;
+        this.thresholds.FiveHourCrit = 101;
+      }
+      this.saveThresholds();
+    },
+
+    // 頻道啟用 toggle:立即存(不必再按儲存)。
+    async toggleChannel(ch) {
+      await this.saveChannel(ch);
+    },
+
+    startEditChannel(ch) {
+      ch.config.bot_token = '';
+      this.editingChannelId = ch.id;
+    },
+
+    beginAddChannel() {
+      this.newChannel = defaultNewChannel();
+      this.showAddChannel = true;
+    },
+
+    channelDetail(ch) {
+      return ch.type === 'telegram' ? (ch.config.chat_id || '') : (ch.config.url || '');
     },
 
     // ── Notifications ─────────────────────────────────────────────────────────
@@ -433,6 +477,7 @@ document.addEventListener('alpine:init', () => {
       try {
         await apiPost('/api/notifications/channels', this.newChannel);
         this.newChannel = defaultNewChannel();
+        this.showAddChannel = false;
         await this.loadNotifications();
         this.notifMsg = this.t('notif_saved'); this.notifMsgType = 'success';
       } catch (e) { this.notifMsg = e.message; this.notifMsgType = 'error'; }
@@ -441,6 +486,7 @@ document.addEventListener('alpine:init', () => {
     async saveChannel(ch) {
       try {
         await apiPut(`/api/notifications/channels/${ch.id}`, { enabled: ch.enabled, config: ch.config });
+        this.editingChannelId = null;
         await this.loadNotifications();
         this.notifMsg = this.t('notif_saved'); this.notifMsgType = 'success';
       } catch (e) { this.notifMsg = e.message; this.notifMsgType = 'error'; }

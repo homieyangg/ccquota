@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	_ "modernc.org/sqlite"
@@ -81,6 +82,14 @@ CREATE TABLE IF NOT EXISTS alert_state (
   fired_at INTEGER NOT NULL,
   PRIMARY KEY (account_id, kind, window_key)
 );
+CREATE TABLE IF NOT EXISTS alert_message (
+  account_id TEXT NOT NULL,
+  window TEXT NOT NULL,
+  sink_key TEXT NOT NULL,
+  ref TEXT NOT NULL,
+  tier TEXT NOT NULL,
+  PRIMARY KEY (account_id, window, sink_key)
+);
 CREATE TABLE IF NOT EXISTS user_cost (
   account_id TEXT NOT NULL,
   user TEXT NOT NULL,
@@ -138,6 +147,50 @@ func (s *Store) SetSetting(key, value string) error {
 		key, value,
 	)
 	return err
+}
+
+// getFloatSetting 讀 float 設定;不存在或解析失敗回 0。
+func (s *Store) getFloatSetting(key string) (float64, error) {
+	v, ok, err := s.GetSetting(key)
+	if err != nil || !ok {
+		return 0, err
+	}
+	f, perr := strconv.ParseFloat(v, 64)
+	if perr != nil {
+		return 0, nil
+	}
+	return f, nil
+}
+
+func (s *Store) setFloatSetting(key string, v float64) error {
+	return s.SetSetting(key, strconv.FormatFloat(v, 'f', -1, 64))
+}
+
+// BudgetHWM:per-account 反推額度高水位基準值,不存在回 0。
+func (s *Store) BudgetHWM(accountID string) (float64, error) {
+	return s.getFloatSetting("budget_hwm:" + accountID)
+}
+
+// BudgetHWMPct:基準是在哪個 7d% 反推出來的(供 UpdateHWM 判斷是否更新),不存在回 0。
+func (s *Store) BudgetHWMPct(accountID string) (float64, error) {
+	return s.getFloatSetting("budget_hwm_pct:" + accountID)
+}
+
+// SetBudgetHWM 同時寫入基準值與其對應 7d%。
+func (s *Store) SetBudgetHWM(accountID string, hwm, pct float64) error {
+	if err := s.setFloatSetting("budget_hwm:"+accountID, hwm); err != nil {
+		return err
+	}
+	return s.setFloatSetting("budget_hwm_pct:"+accountID, pct)
+}
+
+// LastWeekBudget / SetLastWeekBudget:重置時快照的「上週反推額度」,UI 顯示用,不存在回 0。
+func (s *Store) LastWeekBudget(accountID string) (float64, error) {
+	return s.getFloatSetting("budget_lastweek:" + accountID)
+}
+
+func (s *Store) SetLastWeekBudget(accountID string, v float64) error {
+	return s.setFloatSetting("budget_lastweek:"+accountID, v)
 }
 
 // UserCost 代表單一 user 在某段期間的累計成本與 token 數。
@@ -289,6 +342,39 @@ func (s *Store) AlertAlreadyFired(account, kind, windowKey string) (bool, error)
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// AlertMessage 是某 sink 在某視窗已送出的告警訊息狀態,供 warn→crit 就地編輯與跨層級 dedup。
+type AlertMessage struct {
+	Ref  string
+	Tier string
+}
+
+// GetAlertMessage 回傳 (account, window, sinkKey) 已送訊息的 ref 與 tier;不存在 ok=false。
+func (s *Store) GetAlertMessage(account, window, sinkKey string) (AlertMessage, bool, error) {
+	var m AlertMessage
+	err := s.db.QueryRow(
+		`SELECT ref, tier FROM alert_message WHERE account_id=? AND window=? AND sink_key=?`,
+		account, window, sinkKey,
+	).Scan(&m.Ref, &m.Tier)
+	if err == sql.ErrNoRows {
+		return AlertMessage{}, false, nil
+	}
+	if err != nil {
+		return AlertMessage{}, false, err
+	}
+	return m, true, nil
+}
+
+// UpsertAlertMessage 記錄/更新某 sink 在某視窗已送訊息的 ref 與 tier。
+func (s *Store) UpsertAlertMessage(account, window, sinkKey, ref, tier string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO alert_message (account_id, window, sink_key, ref, tier)
+		 VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(account_id, window, sink_key) DO UPDATE SET ref=excluded.ref, tier=excluded.tier`,
+		account, window, sinkKey, ref, tier,
+	)
+	return err
 }
 
 // CreateEnrollment 建立一筆一次性 enrollment token。
@@ -547,6 +633,28 @@ func (s *Store) UserSeries(accountID, user string, sinceTS, bucketSec int64) ([]
 func (s *Store) DistinctUsers(accountID string) ([]string, error) {
 	rows, err := s.db.Query(
 		`SELECT DISTINCT user FROM user_cost WHERE account_id=? ORDER BY user`, accountID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// DistinctUsersSince 回傳 accountID 自 sinceTS 以來有成本紀錄的 distinct users。
+// 供 dashboard 當「名單 roster」用:重置後當前視窗清空,仍能保留近期用過的人。
+func (s *Store) DistinctUsersSince(accountID string, sinceTS int64) ([]string, error) {
+	rows, err := s.db.Query(
+		`SELECT DISTINCT user FROM user_cost WHERE account_id=? AND ts>=? ORDER BY user`,
+		accountID, sinceTS,
 	)
 	if err != nil {
 		return nil, err

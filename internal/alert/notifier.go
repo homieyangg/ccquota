@@ -5,12 +5,16 @@ import (
 	"fmt"
 	"html"
 	"log"
+
+	"github.com/ccquota/ccquota/internal/store"
 )
 
 // AlertStore 是 Notifier 依賴的 store 方法子集（方便測試用 fake）。
 type AlertStore interface {
 	AlertAlreadyFired(account, kind, windowKey string) (bool, error)
 	MarkAlertFired(account, kind, windowKey string, ts int64) error
+	GetAlertMessage(account, window, sinkKey string) (store.AlertMessage, bool, error)
+	UpsertAlertMessage(account, window, sinkKey, ref, tier string) error
 }
 
 // Config 持有 Notifier 的設定。零值等同預設值。
@@ -71,12 +75,19 @@ func (n *Notifier) sendRendered(ctx context.Context, key string, args ...any) er
 		if lang == "" {
 			lang = n.cfg.lang()
 		}
-		if err := s.Send(ctx, renderTemplate(lang, key, args...)); err != nil {
+		if _, err := s.Send(ctx, renderTemplate(lang, key, args...)); err != nil {
 			log.Printf("alert send error: %v", err)
 			lastErr = err
 		}
 	}
 	return lastErr
+}
+
+// windowAnchor 把視窗錨點(resets_at,epoch 秒)四捨五入到最近的分鐘。
+// OAuth 端的 sub-second timestamp 轉 epoch 會讓 resets_at 在相鄰兩值間 ±1s 抖動,
+// dedup key 直接吃原始秒數的話一抖就變成新 key → 同一視窗的告警重送。錨到分鐘可吸收抖動。
+func windowAnchor(epoch int64) int64 {
+	return (epoch + 30) / 60
 }
 
 // fired 查詢 dedup，若已觸發回傳 true（error 時視為未觸發，保守策略）。
@@ -117,34 +128,93 @@ func (n *Notifier) Reset(ctx context.Context, account string, from, to float64) 
 	return n.sendRendered(ctx, "reset", account, from, to)
 }
 
+// tierRank 給告警層級排序,供「已達同層級或更高就不重送」判斷。
+func tierRank(tier string) int {
+	switch tier {
+	case "crit":
+		return 2
+	case "warn":
+		return 1
+	default:
+		return 0
+	}
+}
+
 // Thresholds 根據 sevenDay / fiveHour 百分比決定是否發 warn/crit 通知。
-// 7d 只送最高層級（crit 優先於 warn）；5h crit 獨立判斷。
-// 透過 store dedup，每個視窗每個層級只送一次。
-func (n *Notifier) Thresholds(ctx context.Context, account string, sevenDay, fiveHour float64, sevenDayResetsAt, fiveHourResetsAt int64) error {
+// weekly 同一視窗只有一則:warn 升 crit 時就地編輯既有訊息(不分兩則),由 weeklyEscalate 處理。
+// weeklyBudget / periodCost 用於 weekly 文案(反推額度、本週剩餘);5h crit 獨立判斷,沿用 alert_state dedup。
+func (n *Notifier) Thresholds(ctx context.Context, account string, sevenDay, fiveHour, weeklyBudget, periodCost float64, sevenDayResetsAt, fiveHourResetsAt int64) error {
 	if len(n.sinks) == 0 {
 		return nil
 	}
 
+	window := fmt.Sprintf("%d", windowAnchor(sevenDayResetsAt))
+	remaining := weeklyBudget - periodCost
+	if remaining < 0 {
+		remaining = 0
+	}
 	if sevenDay >= n.cfg.weeklyCrit() {
-		wk := fmt.Sprintf("%d:crit", sevenDayResetsAt)
-		if err := n.sendOnce(ctx, account, "weekly", wk, "weekly_crit", account, sevenDay); err != nil {
-			return err
-		}
+		n.weeklyEscalate(ctx, account, window, "crit", "weekly_crit", sevenDay, weeklyBudget, remaining)
 	} else if sevenDay >= n.cfg.weeklyWarn() {
-		wk := fmt.Sprintf("%d:warn", sevenDayResetsAt)
-		if err := n.sendOnce(ctx, account, "weekly", wk, "weekly_warn", account, sevenDay); err != nil {
-			return err
-		}
+		n.weeklyEscalate(ctx, account, window, "warn", "weekly_warn", sevenDay, weeklyBudget, remaining)
 	}
 
 	if fiveHour >= n.cfg.fiveHourCrit() {
-		wk := fmt.Sprintf("%d", fiveHourResetsAt)
+		wk := fmt.Sprintf("%d", windowAnchor(fiveHourResetsAt))
 		if err := n.sendOnce(ctx, account, "five_hour", wk, "five_hour_crit", account, fiveHour); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// weeklyEscalate 對每個 sink 維護「該視窗一則訊息」:首次達標 Send,升級時就地 Edit。
+// 已達同層級或更高 → 跳過。Edit 失敗或 sink 不支援 → 退化成重送一則。
+// budgetSuffix 依語言渲染、budget≤0 時為空,避免顯示 $0。
+func (n *Notifier) weeklyEscalate(ctx context.Context, account, window, tier, tmplKey string, sevenDay, weeklyBudget, remaining float64) {
+	for _, s := range n.sinks {
+		key := s.Key()
+		prev, ok, err := n.store.GetAlertMessage(account, window, key)
+		if err != nil {
+			log.Printf("alert weekly get-message error: %v", err)
+			continue
+		}
+		if ok && tierRank(prev.Tier) >= tierRank(tier) {
+			continue
+		}
+		lang := s.Lang()
+		if lang == "" {
+			lang = n.cfg.lang()
+		}
+		text := renderTemplate(lang, tmplKey, account, sevenDay, weeklyBudgetSuffix(lang, weeklyBudget, remaining))
+		if ok && prev.Ref != "" {
+			if editErr := s.Edit(ctx, prev.Ref, text); editErr == nil {
+				n.mustUpsertMsg(account, window, key, prev.Ref, tier)
+				continue
+			}
+		}
+		ref, sendErr := s.Send(ctx, text)
+		if sendErr != nil {
+			log.Printf("alert weekly send error: %v", sendErr)
+			continue
+		}
+		n.mustUpsertMsg(account, window, key, ref, tier)
+	}
+}
+
+// weeklyBudgetSuffix 依語言組「反推額度/本週剩餘」尾段;budget≤0 回空字串。
+func weeklyBudgetSuffix(lang string, weeklyBudget, remaining float64) string {
+	if weeklyBudget <= 0 {
+		return ""
+	}
+	return renderTemplate(lang, "weekly_budget_suffix", weeklyBudget, remaining)
+}
+
+func (n *Notifier) mustUpsertMsg(account, window, key, ref, tier string) {
+	if err := n.store.UpsertAlertMessage(account, window, key, ref, tier); err != nil {
+		log.Printf("alert weekly upsert-message error: %v", err)
+	}
 }
 
 // Stale 若 ageSec >= pollerStaleSec 則發送 stale 警報，以 6h bucket dedup 節流。
@@ -195,7 +265,7 @@ func (n *Notifier) UserShareThresholds(ctx context.Context, account string, user
 			continue
 		}
 		// window_key 不會被 parse、只比較；user 放末段，內含 ':' 也無害。
-		wk := fmt.Sprintf("%d:%s:%s", sevenDayResetsAt, tier, u.User)
+		wk := fmt.Sprintf("%d:%s:%s", windowAnchor(sevenDayResetsAt), tier, u.User)
 		safeUser := html.EscapeString(u.User)
 		if err := n.sendOnce(ctx, account, "user_share", wk, tmplKey, safeUser, u.SharePct, u.Cost, perUserBudget); err != nil {
 			return err

@@ -260,6 +260,62 @@ func TestSettingsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestBudgetBaselineRoundTrip(t *testing.T) {
+	s, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	// 不存在時回 0
+	if v, err := s.BudgetHWM("main"); err != nil || v != 0 {
+		t.Fatalf("missing hwm 應為 0,得 %v err=%v", v, err)
+	}
+	if v, err := s.LastWeekBudget("main"); err != nil || v != 0 {
+		t.Fatalf("missing lastweek 應為 0,得 %v err=%v", v, err)
+	}
+
+	// 寫入後讀回,per-account 各自獨立
+	if err := s.SetBudgetHWM("main", 123.5, 96); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetLastWeekBudget("main", 99.25); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := s.BudgetHWM("main"); v != 123.5 {
+		t.Fatalf("hwm 應 123.5,得 %v", v)
+	}
+	if v, _ := s.BudgetHWMPct("main"); v != 96 {
+		t.Fatalf("hwm_pct 應 96,得 %v", v)
+	}
+	if v, _ := s.LastWeekBudget("main"); v != 99.25 {
+		t.Fatalf("lastweek 應 99.25,得 %v", v)
+	}
+	if v, _ := s.BudgetHWM("other"); v != 0 {
+		t.Fatalf("別的帳號不該共用,得 %v", v)
+	}
+}
+
+func TestAlertMessageRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	if _, ok, err := s.GetAlertMessage("main", "w1", "tg:1"); err != nil || ok {
+		t.Fatalf("missing 應 ok=false,得 ok=%v err=%v", ok, err)
+	}
+	if err := s.UpsertAlertMessage("main", "w1", "tg:1", "555", "warn"); err != nil {
+		t.Fatal(err)
+	}
+	m, ok, _ := s.GetAlertMessage("main", "w1", "tg:1")
+	if !ok || m.Ref != "555" || m.Tier != "warn" {
+		t.Fatalf("got %+v ok=%v", m, ok)
+	}
+	// 升級覆蓋 tier,ref 不變
+	_ = s.UpsertAlertMessage("main", "w1", "tg:1", "555", "crit")
+	m2, _, _ := s.GetAlertMessage("main", "w1", "tg:1")
+	if m2.Tier != "crit" {
+		t.Fatalf("升級後 tier 應 crit,得 %q", m2.Tier)
+	}
+}
+
 func TestEnrollmentRoundTrip(t *testing.T) {
 	s, err := Open(":memory:")
 	if err != nil {

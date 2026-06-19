@@ -435,6 +435,12 @@ func runConnect(s *store.Store) {
 // 每次都從 DB 重讀最新頻道設定再送通知。
 func resetCallback(s *store.Store, c *secret.Cipher) func(string, float64, float64) {
 	return func(acct string, from, to float64) {
+		// 重置那刻把高水位基準快照成「上週反推額度」(UI 顯示用);hwm 延續不歸零。
+		if hwm, err := s.BudgetHWM(acct); err == nil && hwm > 0 {
+			if err := s.SetLastWeekBudget(acct, hwm); err != nil {
+				log.Printf("snapshot last-week budget error: %v", err)
+			}
+		}
 		th, _ := s.GetAlertThresholds()
 		if !th.ResetNotify {
 			return
@@ -484,13 +490,27 @@ func runServe(s *store.Store) {
 							log.Printf("alert stale error: %v", err)
 						}
 					} else {
-						if err := n.Thresholds(ctx, a.ID, r.SevenDay, r.FiveHour, r.SevenDayResetsAt, r.FiveHourResetsAt); err != nil {
+						// 先算 share(順便抬高水位基準),weekly 告警的反推額度/本週剩餘要用。
+						// 與 dashboard 共用 share.Compute / SinceTS,確保視窗一致、數字不分岔。
+						sinceTS := share.SinceTS(r, true, now)
+						baseline, _ := s.BudgetHWM(a.ID)
+						baselinePct, _ := s.BudgetHWMPct(a.ID)
+						res, cerr := share.Compute(s, a.ID, sinceTS, r.SevenDay, baseline)
+						var weeklyBudget, periodCost float64
+						if cerr == nil {
+							weeklyBudget, periodCost = res.EffectiveBudget, res.PeriodCost
+							// 7d% 比記錄時更高(離上限更近=反推更準)才抬高水位基準。
+							if nh, np := share.UpdateHWM(baseline, baselinePct, res.WeeklyBudget, r.SevenDay); nh != baseline || np != baselinePct {
+								if err := s.SetBudgetHWM(a.ID, nh, np); err != nil {
+									log.Printf("set budget hwm error: %v", err)
+								}
+							}
+						}
+						if err := n.Thresholds(ctx, a.ID, r.SevenDay, r.FiveHour, weeklyBudget, periodCost, r.SevenDayResetsAt, r.FiveHourResetsAt); err != nil {
 							log.Printf("alert thresholds error: %v", err)
 						}
 						// per-user 平分額度 advisory(預設關;notifier 內部會檢查啟用與 resets_at)。
-						// 與 dashboard 共用 share.Compute / SinceTS,確保視窗一致、數字不分岔。
-						sinceTS := share.SinceTS(r, true, now)
-						if res, cerr := share.Compute(s, a.ID, sinceTS, r.SevenDay); cerr == nil {
+						if cerr == nil {
 							ur := make([]alert.UserShareReading, 0, len(res.Shares))
 							for _, sh := range res.Shares {
 								ur = append(ur, alert.UserShareReading{User: sh.User, SharePct: sh.SharePct, Cost: sh.Cost})
