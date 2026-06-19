@@ -157,7 +157,7 @@ func TestAccountsCostKeepsRecentRoster(t *testing.T) {
 	_ = s.UpsertAccount(store.Account{ID: "acct1", Label: "Test", AccessToken: "a", RefreshToken: "r", ExpiresAt: 9999})
 
 	now := time.Now().Unix()
-	resetsAt := now + 3*24*3600    // 期間起始 = resets_at - 7天 = now - 4天
+	resetsAt := now + 3*24*3600 // 期間起始 = resets_at - 7天 = now - 4天
 	_ = s.InsertReading(store.Reading{
 		AccountID: "acct1", TS: now, SevenDay: 50, FiveHour: 20, SevenDayResetsAt: resetsAt,
 	})
