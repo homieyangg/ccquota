@@ -563,6 +563,28 @@ func (s *Store) DistinctUsers(accountID string) ([]string, error) {
 	return out, rows.Err()
 }
 
+// DistinctUsersSince 回傳 accountID 自 sinceTS 以來有成本紀錄的 distinct users。
+// 供 dashboard 當「名單 roster」用:重置後當前視窗清空,仍能保留近期用過的人。
+func (s *Store) DistinctUsersSince(accountID string, sinceTS int64) ([]string, error) {
+	rows, err := s.db.Query(
+		`SELECT DISTINCT user FROM user_cost WHERE account_id=? AND ts>=? ORDER BY user`,
+		accountID, sinceTS,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var u string
+		if err := rows.Scan(&u); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
 // DeleteUser 刪除某 user 的成本紀錄與 enrollment(同一交易)。
 func (s *Store) DeleteUser(accountID, user string) error {
 	tx, err := s.db.Begin()

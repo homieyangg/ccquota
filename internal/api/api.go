@@ -433,7 +433,7 @@ func (h *handler) handleAccounts(w http.ResponseWriter, r *http.Request) {
 		sinceTS := share.SinceTS(reading, ok, now)
 
 		// 計算期間成本與反推週額度。
-		costInfo, err := h.buildCost(a.ID, sinceTS, reading, ok)
+		costInfo, err := h.buildCost(a.ID, sinceTS, now, reading, ok)
 		if err != nil {
 			jsonError(w, "db error", http.StatusInternalServerError)
 			return
@@ -445,9 +445,13 @@ func (h *handler) handleAccounts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
+// rosterWindowSec:dashboard 名單保留「最近這段期間用過的人」,
+// 讓週限重置後當前視窗清空時,名單不會整個消失(沒新用量者顯示 $0 直到再次使用)。
+const rosterWindowSec = 7 * 24 * 3600
+
 // buildCost 計算帳號的期間成本、反推週額度與每人份額。
 // per-user 份額計算抽到 share.Compute,與 serve loop 的告警共用同一套(防分岔)。
-func (h *handler) buildCost(accountID string, sinceTS int64, reading store.Reading, hasReading bool) (costResp, error) {
+func (h *handler) buildCost(accountID string, sinceTS, now int64, reading store.Reading, hasReading bool) (costResp, error) {
 	var sevenDayPct float64
 	if hasReading {
 		sevenDayPct = reading.SevenDay
@@ -464,7 +468,9 @@ func (h *handler) buildCost(accountID string, sinceTS int64, reading store.Readi
 	}
 
 	users := make([]userCostResp, 0, len(res.Shares))
+	seen := make(map[string]bool, len(res.Shares))
 	for _, s := range res.Shares {
+		seen[s.User] = true
 		users = append(users, userCostResp{
 			User:          s.User,
 			CostUSD:       s.Cost,
@@ -473,6 +479,19 @@ func (h *handler) buildCost(accountID string, sinceTS int64, reading store.Readi
 			TokenSharePct: calc.TokenSharePct(s.Tokens, totalTokens),
 		})
 	}
+
+	// 補進最近 rosterWindowSec 用過、但當前視窗沒花錢的人(顯示 $0)。
+	// 純顯示用,不進 share.Compute 的分母,故不稀釋 perUserBudget。
+	roster, err := h.s.DistinctUsersSince(accountID, now-rosterWindowSec)
+	if err != nil {
+		return costResp{}, err
+	}
+	for _, u := range roster {
+		if !seen[u] {
+			users = append(users, userCostResp{User: u})
+		}
+	}
+
 	sort.Slice(users, func(i, j int) bool {
 		return users[i].CostUSD > users[j].CostUSD
 	})
