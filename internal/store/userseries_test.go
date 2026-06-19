@@ -42,8 +42,8 @@ func TestDistinctUsers(t *testing.T) {
 func TestDistinctUsersSince(t *testing.T) {
 	s := newTestStore(t)
 	s.InsertUserCost("main", "old", 100, 1, 1)    // 早於視窗,排除
-	s.InsertUserCost("main", "gary", 1000, 1, 1)   // 早於視窗,排除
-	s.InsertUserCost("main", "primo", 5000, 1, 1)  // 視窗內
+	s.InsertUserCost("main", "gary", 1000, 1, 1)  // 早於視窗,排除
+	s.InsertUserCost("main", "primo", 5000, 1, 1) // 視窗內
 	us, err := s.DistinctUsersSince("main", 2000)
 	if err != nil {
 		t.Fatal(err)
