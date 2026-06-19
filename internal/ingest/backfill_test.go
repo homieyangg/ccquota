@@ -14,7 +14,7 @@ func TestBackfillHandler(t *testing.T) {
 	defer s.Close()
 	h := NewBackfillHandler(s, "secret")
 
-	body := `{"account":"main","user":"gary","tokens":5000,"window_start":500,"cutoff":1000}`
+	body := `{"account":"main","user":"gary","cost_usd":42.5,"tokens":5000,"window_start":500,"cutoff":1000}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/backfill", strings.NewReader(body))
 	req.Header.Set("Authorization", "Bearer secret")
 	rr := httptest.NewRecorder()
@@ -23,8 +23,8 @@ func TestBackfillHandler(t *testing.T) {
 		t.Fatalf("want 200, got %d: %s", rr.Code, rr.Body.String())
 	}
 	uc, _ := s.UserPeriodCosts("main", 0)
-	if uc["gary"].Tokens != 5000 {
-		t.Fatalf("回填後 gary tokens 應 5000,得 %d", uc["gary"].Tokens)
+	if uc["gary"].Tokens != 5000 || uc["gary"].Cost != 42.5 {
+		t.Fatalf("回填後 gary 應 tokens=5000 cost=42.5,得 %d / %v", uc["gary"].Tokens, uc["gary"].Cost)
 	}
 
 	// 無認證 → 401

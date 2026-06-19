@@ -8,11 +8,12 @@ import (
 )
 
 type backfillReq struct {
-	Account     string `json:"account"`
-	User        string `json:"user"`
-	Tokens      int64  `json:"tokens"`
-	WindowStart int64  `json:"window_start"`
-	Cutoff      int64  `json:"cutoff"` // client 算到哪一刻為止;伺服器只記 tokens,僅供除錯
+	Account     string  `json:"account"`
+	User        string  `json:"user"`
+	CostUSD     float64 `json:"cost_usd"` // client 用維護中的價格表算好的 $;抓不到表時為 0
+	Tokens      int64   `json:"tokens"`
+	WindowStart int64   `json:"window_start"`
+	Cutoff      int64   `json:"cutoff"` // client 算到哪一刻為止;伺服器只記,僅供除錯
 }
 
 // NewBackfillHandler 回傳 client 回填端點:POST /v1/backfill,認證同其他 /v1(ingest Bearer)。
@@ -41,7 +42,7 @@ func NewBackfillHandler(s *store.Store, token string) http.Handler {
 			http.Error(w, "missing tokens/window_start", http.StatusBadRequest)
 			return
 		}
-		if err := s.InsertBackfill(req.Account, req.User, req.Tokens, req.WindowStart); err != nil {
+		if err := s.InsertBackfill(req.Account, req.User, req.CostUSD, req.Tokens, req.WindowStart); err != nil {
 			http.Error(w, "store error", http.StatusInternalServerError)
 			return
 		}

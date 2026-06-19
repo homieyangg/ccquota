@@ -213,9 +213,10 @@ func (s *Store) InsertUserCost(accountID, user string, ts int64, cost float64, t
 	return err
 }
 
-// InsertBackfill 寫入 client 回填的歷史 token(cost_usd=0,ts=windowStart),冪等取代同 (account,user)
-// 的舊回填列。一筆同交易:先刪舊 backfill、再插新的,避免重跑時累加。
-func (s *Store) InsertBackfill(accountID, user string, tokens, windowStart int64) error {
+// InsertBackfill 寫入 client 回填的歷史用量(ts=windowStart),冪等取代同 (account,user) 的舊回填列。
+// cost 是 client 用維護中的價格表算好的 $(抓不到表時為 0,dashboard 退回 token 估算)。
+// 一筆同交易:先刪舊 backfill、再插新的,避免重跑時累加。
+func (s *Store) InsertBackfill(accountID, user string, cost float64, tokens, windowStart int64) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -228,8 +229,8 @@ func (s *Store) InsertBackfill(accountID, user string, tokens, windowStart int64
 		return err
 	}
 	if _, err := tx.Exec(
-		`INSERT INTO user_cost (account_id, user, ts, cost_usd, tokens, source) VALUES (?, ?, ?, 0, ?, 'backfill')`,
-		accountID, user, windowStart, tokens,
+		`INSERT INTO user_cost (account_id, user, ts, cost_usd, tokens, source) VALUES (?, ?, ?, ?, ?, 'backfill')`,
+		accountID, user, windowStart, cost, tokens,
 	); err != nil {
 		return err
 	}
