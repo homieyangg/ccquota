@@ -24,6 +24,7 @@ const (
 
 	attrAccount = "ccquota.account"
 	attrUser    = "ccquota.user"
+	attrUserID  = "user.id"
 )
 
 type handler struct {
@@ -113,8 +114,21 @@ func readBody(r *http.Request) ([]byte, bool, error) {
 func (h *handler) process(req *collectorpb.ExportMetricsServiceRequest) {
 	now := time.Now().Unix()
 	for _, rm := range req.GetResourceMetrics() {
-		account, user, ok := extractAccountUser(rm.GetResource().GetAttributes())
+		account, userName, userID, ok := extractAccountUser(rm.GetResource().GetAttributes())
 		if !ok {
+			continue
+		}
+
+		// 解析 display name：mapping > ccquota.user > skip
+		user := userName
+		if userID != "" {
+			if mapped, found, err := h.s.ResolveUserID(userID); err == nil && found {
+				user = mapped
+			} else if userName != "" {
+				h.s.LearnUserMapping(userID, userName)
+			}
+		}
+		if user == "" {
 			continue
 		}
 		var totalCost float64
@@ -142,17 +156,19 @@ func (h *handler) process(req *collectorpb.ExportMetricsServiceRequest) {
 	}
 }
 
-// extractAccountUser 從 resource attributes 讀取 ccquota.account 與 ccquota.user。
-func extractAccountUser(attrs []*commonpb.KeyValue) (account, user string, ok bool) {
+// extractAccountUser 從 resource attributes 讀取 ccquota.account、ccquota.user 和 user.id。
+func extractAccountUser(attrs []*commonpb.KeyValue) (account, user, userID string, ok bool) {
 	for _, kv := range attrs {
 		switch kv.GetKey() {
 		case attrAccount:
 			account = kv.GetValue().GetStringValue()
 		case attrUser:
 			user = kv.GetValue().GetStringValue()
+		case attrUserID:
+			userID = kv.GetValue().GetStringValue()
 		}
 	}
-	ok = account != "" && user != ""
+	ok = account != ""
 	return
 }
 

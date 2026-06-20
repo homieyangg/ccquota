@@ -203,6 +203,7 @@ func New(s *store.Store, oc *oauth.Client, staleSec int64, ingestToken, publicUR
 	mux.Handle("/api/notifications/thresholds", adminAuth(s, http.HandlerFunc(h.handleThresholds)))
 	mux.Handle("/api/user-series", adminAuth(s, http.HandlerFunc(h.handleUserSeries)))
 	mux.Handle("/api/users", adminAuth(s, http.HandlerFunc(h.handleDeleteUser)))
+	mux.Handle("/api/user-mappings", adminAuth(s, http.HandlerFunc(h.handleUserMappings)))
 	return mux
 }
 
@@ -946,4 +947,54 @@ func (h *handler) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+// handleUserMappings: GET 列出所有 mapping / PUT 新增或更新 / DELETE 刪除。
+func (h *handler) handleUserMappings(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		mappings, err := h.s.ListUserMappings()
+		if err != nil {
+			jsonError(w, "db error", http.StatusInternalServerError)
+			return
+		}
+		if mappings == nil {
+			mappings = []store.UserMapping{}
+		}
+		writeJSON(w, mappings)
+
+	case http.MethodPut:
+		var req struct {
+			UserID      string `json:"user_id"`
+			DisplayName string `json:"display_name"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonError(w, "bad json", http.StatusBadRequest)
+			return
+		}
+		if req.UserID == "" || req.DisplayName == "" {
+			jsonError(w, "user_id and display_name required", http.StatusBadRequest)
+			return
+		}
+		if err := h.s.SetUserMapping(req.UserID, req.DisplayName); err != nil {
+			jsonError(w, "db error", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "ok"})
+
+	case http.MethodDelete:
+		userID := r.URL.Query().Get("user_id")
+		if userID == "" {
+			jsonError(w, "user_id required", http.StatusBadRequest)
+			return
+		}
+		if err := h.s.DeleteUserMapping(userID); err != nil {
+			jsonError(w, "db error", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "ok"})
+
+	default:
+		jsonError(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }

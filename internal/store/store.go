@@ -129,6 +129,10 @@ CREATE TABLE IF NOT EXISTS channels (
 		!strings.Contains(e.Error(), "duplicate column") {
 		return e
 	}
+	s.db.Exec(`CREATE TABLE IF NOT EXISTS user_mapping (
+	  user_id TEXT PRIMARY KEY,
+	  display_name TEXT NOT NULL
+	)`)
 	return nil
 }
 
@@ -715,4 +719,65 @@ func (s *Store) DeleteUser(accountID, user string) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+type UserMapping struct {
+	UserID      string
+	DisplayName string
+}
+
+// ResolveUserID 查 user.id hash 對應的 display name。
+func (s *Store) ResolveUserID(userID string) (string, bool, error) {
+	var name string
+	err := s.db.QueryRow(`SELECT display_name FROM user_mapping WHERE user_id=?`, userID).Scan(&name)
+	if err == sql.ErrNoRows {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return name, true, nil
+}
+
+// SetUserMapping 建立或更新 user.id → display_name 映射。
+func (s *Store) SetUserMapping(userID, displayName string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO user_mapping (user_id, display_name) VALUES (?, ?)
+		 ON CONFLICT(user_id) DO UPDATE SET display_name=excluded.display_name`,
+		userID, displayName,
+	)
+	return err
+}
+
+// LearnUserMapping 自動建立映射（不覆蓋既有手動映射）。
+func (s *Store) LearnUserMapping(userID, displayName string) error {
+	_, err := s.db.Exec(
+		`INSERT OR IGNORE INTO user_mapping (user_id, display_name) VALUES (?, ?)`,
+		userID, displayName,
+	)
+	return err
+}
+
+// DeleteUserMapping 刪除一筆映射。
+func (s *Store) DeleteUserMapping(userID string) error {
+	_, err := s.db.Exec(`DELETE FROM user_mapping WHERE user_id=?`, userID)
+	return err
+}
+
+// ListUserMappings 回傳所有映射，依 display_name 排序。
+func (s *Store) ListUserMappings() ([]UserMapping, error) {
+	rows, err := s.db.Query(`SELECT user_id, display_name FROM user_mapping ORDER BY display_name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []UserMapping
+	for rows.Next() {
+		var m UserMapping
+		if err := rows.Scan(&m.UserID, &m.DisplayName); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }
