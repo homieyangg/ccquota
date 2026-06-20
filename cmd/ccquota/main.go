@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -464,6 +465,8 @@ func runServe(s *store.Store) {
 	cipher := loadCipher()
 	p := buildPoller(s)
 	p.OnReset = resetCallback(s, cipher)
+	dailyReportHour := envInt64("CCQUOTA_DAILY_REPORT_HOUR", 18)
+	dashboardURL := os.Getenv("CCQUOTA_PUBLIC_URL")
 	ctx := context.Background()
 	go func() {
 		for {
@@ -523,6 +526,22 @@ func runServe(s *store.Store) {
 				}
 			}
 
+			// 每日用量報告：到達設定時刻（台北時間）且今天尚未送過就發。
+			tpe := time.FixedZone("TPE", 8*3600)
+			nowTPE := time.Now().In(tpe)
+			today := nowTPE.Format("2006-01-02")
+			if nowTPE.Hour() >= int(dailyReportHour) {
+				if fired, _ := s.AlertAlreadyFired("", "daily_report", today); !fired {
+					reportData := buildDailyReportData(s, nowTPE, dashboardURL)
+					if err := n.DailyReport(ctx, reportData); err != nil {
+						log.Printf("daily report error: %v", err)
+					} else {
+						s.MarkAlertFired("", "daily_report", today, time.Now().Unix())
+						log.Printf("daily report sent for %s", today)
+					}
+				}
+			}
+
 			time.Sleep(*interval)
 		}
 	}()
@@ -557,6 +576,24 @@ func runServe(s *store.Store) {
 	// client 安裝時回填本機歷史 token,解全新安裝冷啟動。
 	mux.Handle("/v1/backfill", ingest.NewBackfillHandler(s, ingestToken))
 
+	// 手動觸發每日報告（localhost only，不需 auth）。
+	mux.HandleFunc("/internal/daily-report", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST only", http.StatusMethodNotAllowed)
+			return
+		}
+		tpe := time.FixedZone("TPE", 8*3600)
+		nowTPE := time.Now().In(tpe)
+		reportData := buildDailyReportData(s, nowTPE, os.Getenv("CCQUOTA_PUBLIC_URL"))
+		nn := buildNotifierFromStore(s, cipher)
+		if err := nn.DailyReport(r.Context(), reportData); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+
 	mux.Handle("/", web.Handler())
 
 	log.Printf("ccquota listening on %s, poll every %s", *addr, *interval)
@@ -575,4 +612,90 @@ func runPoll(s *store.Store) {
 	p := buildPoller(s)
 	p.OnReset = resetCallback(s, loadCipher())
 	p.PollAll(context.Background())
+}
+
+// buildDailyReportData 從 store 組裝每日報告所需的所有資料。
+func buildDailyReportData(s *store.Store, nowTPE time.Time, dashboardURL string) alert.DailyReportData {
+	data := alert.DailyReportData{
+		NowTPE:       nowTPE.Format("01/02 15:04"),
+		DashboardURL: dashboardURL,
+	}
+
+	accts, err := s.ListAccounts()
+	if err != nil {
+		log.Printf("daily report: list accounts: %v", err)
+		return data
+	}
+
+	now := time.Now().Unix()
+	midnightTPE := time.Date(nowTPE.Year(), nowTPE.Month(), nowTPE.Day(), 0, 0, 0, 0, nowTPE.Location())
+	todaySinceTS := midnightTPE.Unix()
+
+	for _, a := range accts {
+		ra := alert.DailyReportAccount{ID: a.ID}
+
+		reading, ok, err := s.LatestReading(a.ID)
+		if err == nil && ok {
+			ra.HasReading = true
+			ra.SevenDay = reading.SevenDay
+			ra.FiveHour = reading.FiveHour
+			staleSec := envInt64("CCQUOTA_POLLER_STALE_SEC", 1800)
+			age := now - reading.TS
+			pastReset := reading.SevenDayResetsAt > 0 && now > reading.SevenDayResetsAt
+			ra.Stale = age > staleSec || pastReset
+		}
+
+		sinceTS := share.SinceTS(reading, ok, now)
+		baseline, _ := s.BudgetHWM(a.ID)
+		res, cerr := share.Compute(s, a.ID, sinceTS, reading.SevenDay, baseline)
+		if cerr == nil {
+			ra.WeeklyBudget = res.EffectiveBudget
+			ra.PerUserBudget = res.PerUserBudget
+		}
+
+		periodCosts, _ := s.UserPeriodCosts(a.ID, sinceTS)
+		todayCosts, _ := s.UserPeriodCosts(a.ID, todaySinceTS)
+
+		for user, pc := range periodCosts {
+			tc := todayCosts[user]
+			sharePct := 0.0
+			if ra.PerUserBudget > 0 {
+				sharePct = pc.Cost / ra.PerUserBudget * 100
+			}
+			ra.Users = append(ra.Users, alert.DailyReportUser{
+				Name:       user,
+				PeriodCost: pc.Cost,
+				TodayCost:  tc.Cost,
+				Tokens:     tc.Tokens,
+				SharePct:   sharePct,
+			})
+		}
+		for user, tc := range todayCosts {
+			if _, exists := periodCosts[user]; !exists {
+				ra.Users = append(ra.Users, alert.DailyReportUser{
+					Name:      user,
+					TodayCost: tc.Cost,
+					Tokens:    tc.Tokens,
+				})
+			}
+		}
+
+		roster, _ := s.DistinctUsersSince(a.ID, now-7*24*3600)
+		seen := make(map[string]bool)
+		for _, u := range ra.Users {
+			seen[u.Name] = true
+		}
+		for _, u := range roster {
+			if !seen[u] {
+				ra.Users = append(ra.Users, alert.DailyReportUser{Name: u})
+			}
+		}
+
+		sort.Slice(ra.Users, func(i, j int) bool {
+			return ra.Users[i].PeriodCost > ra.Users[j].PeriodCost
+		})
+
+		data.Accounts = append(data.Accounts, ra)
+	}
+	return data
 }
