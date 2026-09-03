@@ -97,8 +97,9 @@ func (p *Poller) now() int64 {
 
 // cycle polls a single account once.
 // credsRefreshAhead:CLI-backed 帳號剩餘壽命低於此(秒)就自行 refresh。
-// 取 30 分,留得下 refresh 失敗後退避重試的空間(access token 壽命 8 小時)。
-const credsRefreshAhead = 1800
+// token endpoint 會回 429,取 2 小時讓退避(600s 起跳倍增)能重試四次以上再到期。
+// access token 壽命 8 小時,所以正常情況一天仍只換三到四次。
+const credsRefreshAhead = 7200
 
 func (p *Poller) cycle(ctx context.Context, a store.Account) error {
 	now := p.now()

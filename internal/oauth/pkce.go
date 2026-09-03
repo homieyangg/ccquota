@@ -10,7 +10,9 @@ import (
 const (
 	ClientID    = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 	AuthorizeEP = "https://claude.com/cai/oauth/authorize"
-	TokenEP     = "https://console.anthropic.com/v1/oauth/token"
+	// console.anthropic.com 這台對本機 IP 一律回 429(連無效 token 都不驗就擋),
+	// api.anthropic.com 才會真的受理 refresh_token 與 authorization_code。
+	TokenEP     = "https://api.anthropic.com/v1/oauth/token"
 	RedirectURI = "https://platform.claude.com/oauth/code/callback"
 	Scope       = "org:create_api_key user:profile user:inference"
 	UserAgent   = "claude-code/2.1.177"
