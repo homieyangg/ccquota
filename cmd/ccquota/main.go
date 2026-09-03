@@ -334,10 +334,9 @@ func buildNotifierFromStore(s *store.Store, c *secret.Cipher) *alert.Notifier {
 
 func buildPoller(s *store.Store) *poller.Poller {
 	return &poller.Poller{
-		Store:      s,
-		Usage:      &usage.Client{},
-		OAuth:      &oauth.Client{},
-		RefreshCmd: claudeDoctorRefresh,
+		Store: s,
+		Usage: &usage.Client{},
+		OAuth: &oauth.Client{},
 	}
 }
 
@@ -381,23 +380,9 @@ func claudeCredsPath() string {
 	return filepath.Join(home, ".claude", ".credentials.json")
 }
 
-// claudeDoctorRefresh 跑 `claude doctor` 觸發本機 CLI 在快到期時免費 refresh token
-// （不叫 model、不吃 Agent SDK credit)。doctor 是 TUI 會 hang,refresh 啟動就完成,timeout 砍掉即可。
-func claudeDoctorRefresh(ctx context.Context) error {
-	bin := findClaude()
-	if bin == "" {
-		return fmt.Errorf("claude CLI not found")
-	}
-	cctx, cancel := context.WithTimeout(ctx, 45*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(cctx, bin, "doctor")
-	_ = cmd.Run() // 被 timeout 砍是預期的,refresh 已完成
-	return nil
-}
-
 // runConnect:在 server 上一鍵接帳號(CLI-backed)。
 // 跑 claude auth login(使用者瀏覽器授權 + 貼 code),然後把帳號設成「讀本機 creds」模式,
-// poller 之後直接讀那顆 token 打 usage、快到期自動 doctor refresh。不碰被限流的 token endpoint。
+// poller 之後直接讀那顆 token 打 usage,快到期時自行 refresh 並寫回 creds 檔。
 func runConnect(s *store.Store) {
 	fs := flag.NewFlagSet("connect", flag.ExitOnError)
 	id := fs.String("id", "main", "account id")

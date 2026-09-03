@@ -33,7 +33,6 @@ type Poller struct {
 	MaxBackoff    int64        // 退避上限秒數;預設 21600(6h)
 	Now           func() int64 // default time.Now().Unix
 	OnReset       func(account string, from, to float64)
-	RefreshCmd    func(ctx context.Context) error // CLI-backed 帳號快到期時呼叫(跑 claude doctor);nil 則略過
 
 	mu      sync.Mutex
 	gate    map[string]int64 // accountID -> 在此 unix 時間前不再嘗試 refresh
@@ -97,15 +96,14 @@ func (p *Poller) now() int64 {
 }
 
 // cycle polls a single account once.
-// credsRefreshAhead:CLI-backed 帳號剩餘壽命低於此(秒)就跑 claude doctor 觸發 refresh。
-// 取 10 分,涵蓋實測的 doctor refresh buffer(<10 分)。
-const credsRefreshAhead = 600
+// credsRefreshAhead:CLI-backed 帳號剩餘壽命低於此(秒)就自行 refresh。
+// 取 30 分,留得下 refresh 失敗後退避重試的空間(access token 壽命 8 小時)。
+const credsRefreshAhead = 1800
 
 func (p *Poller) cycle(ctx context.Context, a store.Account) error {
 	now := p.now()
 
-	// CLI-backed 帳號:直接讀本機 claude creds 檔取 token,快到期時跑 claude doctor
-	// 觸發免費 refresh(不碰被限流的 token endpoint、不叫 model)。
+	// CLI-backed 帳號:token 存在本機 claude creds 檔,refresh 後寫回同一個檔。
 	if a.CredsPath != "" {
 		return p.cycleCLIBacked(ctx, a, now)
 	}
@@ -146,17 +144,33 @@ func (p *Poller) cycle(ctx context.Context, a store.Account) error {
 	return p.recordUsage(ctx, a, now, a.AccessToken)
 }
 
-// cycleCLIBacked 處理 CLI-backed 帳號:讀本機 creds、快到期觸發 doctor refresh、拉 usage。
+// cycleCLIBacked 處理 CLI-backed 帳號:讀本機 creds、快到期時自行 refresh 並寫回檔案、拉 usage。
+// 不再靠 `claude doctor` 的副作用刷 token,新版 CLI 的 doctor 已不做 OAuth refresh。
 func (p *Poller) cycleCLIBacked(ctx context.Context, a store.Account, now int64) error {
-	token, exp, err := readCredsToken(a.CredsPath)
+	token, refresh, exp, err := readCredsToken(a.CredsPath)
 	if err != nil {
 		return fmt.Errorf("account %s: read creds %s: %w", a.ID, a.CredsPath, err)
 	}
-	if exp-now < credsRefreshAhead && p.RefreshCmd != nil {
-		if err := p.RefreshCmd(ctx); err != nil {
-			log.Printf("account %s: refresh cmd: %v", a.ID, err)
+	// 兩顆都沒有 = CLI 已登出,再打什麼都沒用,直接回報等人重登。
+	if token == "" && refresh == "" {
+		return fmt.Errorf("account %s: creds %s logged out, run: claude auth login", a.ID, a.CredsPath)
+	}
+	if exp-now < credsRefreshAhead && refresh != "" && p.OAuth != nil {
+		if !p.refreshAllowed(a.ID, now) {
+			log.Printf("account %s: refresh backing off, skip this cycle", a.ID)
+		} else if tok, err := p.OAuth.Refresh(ctx, refresh); err != nil {
+			d := p.noteRefreshFail(a.ID, now)
+			if now >= exp {
+				return fmt.Errorf("account %s: token expired, refresh failed, backing off %ds: %w", a.ID, d, err)
+			}
+			log.Printf("account %s: refresh failed, keep token (%ds left), backing off %ds: %v", a.ID, exp-now, d, err)
 		} else {
-			token, _, _ = readCredsToken(a.CredsPath)
+			// refresh token 用過即換,寫回失敗等於把新的那顆弄丟,下一輪會被判定重用而整串失效。
+			if err := writeCredsToken(a.CredsPath, tok, now); err != nil {
+				return fmt.Errorf("account %s: rotated token but writing %s failed, re-login needed: %w", a.ID, a.CredsPath, err)
+			}
+			p.noteRefreshOK(a.ID)
+			token = tok.AccessToken
 		}
 	}
 	if token == "" {
