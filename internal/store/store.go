@@ -129,6 +129,16 @@ CREATE TABLE IF NOT EXISTS channels (
 		!strings.Contains(e.Error(), "duplicate column") {
 		return e
 	}
+	// scoped_* 存 limits[] 的 weekly_scoped(限定模型的週限),API 已不再回 seven_day_sonnet/opus。
+	for _, ddl := range []string{
+		`ALTER TABLE readings ADD COLUMN scoped_pct REAL NOT NULL DEFAULT 0`,
+		`ALTER TABLE readings ADD COLUMN scoped_label TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE readings ADD COLUMN scoped_resets_at INTEGER NOT NULL DEFAULT 0`,
+	} {
+		if _, e := s.db.Exec(ddl); e != nil && !strings.Contains(e.Error(), "duplicate column") {
+			return e
+		}
+	}
 	s.db.Exec(`CREATE TABLE IF NOT EXISTS user_mapping (
 	  user_id TEXT PRIMARY KEY,
 	  display_name TEXT NOT NULL
@@ -315,13 +325,20 @@ type Reading struct {
 	TS                                 int64
 	SevenDay, FiveHour, Sonnet, Opus   float64
 	SevenDayResetsAt, FiveHourResetsAt int64
+
+	// Scoped*:限定模型的週限(usage API limits[] 的 weekly_scoped),常高於 SevenDay。
+	ScopedPct      float64
+	ScopedLabel    string
+	ScopedResetsAt int64
 }
 
 func (s *Store) InsertReading(r Reading) error {
 	_, err := s.db.Exec(`
-INSERT INTO readings (account_id,ts,seven_day,five_hour,sonnet,opus,seven_day_resets_at,five_hour_resets_at)
-VALUES (?,?,?,?,?,?,?,?)`,
-		r.AccountID, r.TS, r.SevenDay, r.FiveHour, r.Sonnet, r.Opus, r.SevenDayResetsAt, r.FiveHourResetsAt)
+INSERT INTO readings (account_id,ts,seven_day,five_hour,sonnet,opus,seven_day_resets_at,five_hour_resets_at,
+                      scoped_pct,scoped_label,scoped_resets_at)
+VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		r.AccountID, r.TS, r.SevenDay, r.FiveHour, r.Sonnet, r.Opus, r.SevenDayResetsAt, r.FiveHourResetsAt,
+		r.ScopedPct, r.ScopedLabel, r.ScopedResetsAt)
 	return err
 }
 
@@ -329,9 +346,11 @@ VALUES (?,?,?,?,?,?,?,?)`,
 func (s *Store) LatestReading(accountID string) (Reading, bool, error) {
 	var r Reading
 	err := s.db.QueryRow(`
-SELECT account_id,ts,seven_day,five_hour,sonnet,opus,seven_day_resets_at,five_hour_resets_at
+SELECT account_id,ts,seven_day,five_hour,sonnet,opus,seven_day_resets_at,five_hour_resets_at,
+       scoped_pct,scoped_label,scoped_resets_at
 FROM readings WHERE account_id=? ORDER BY ts DESC LIMIT 1`, accountID).
-		Scan(&r.AccountID, &r.TS, &r.SevenDay, &r.FiveHour, &r.Sonnet, &r.Opus, &r.SevenDayResetsAt, &r.FiveHourResetsAt)
+		Scan(&r.AccountID, &r.TS, &r.SevenDay, &r.FiveHour, &r.Sonnet, &r.Opus, &r.SevenDayResetsAt, &r.FiveHourResetsAt,
+			&r.ScopedPct, &r.ScopedLabel, &r.ScopedResetsAt)
 	if err == sql.ErrNoRows {
 		return Reading{}, false, nil
 	}
@@ -347,7 +366,8 @@ func (s *Store) InsertEvent(accountID string, ts int64, typ, detail string) erro
 // History returns readings with ts >= sinceTS, ascending order.
 func (s *Store) History(accountID string, sinceTS int64) ([]Reading, error) {
 	rows, err := s.db.Query(`
-SELECT account_id,ts,seven_day,five_hour,sonnet,opus,seven_day_resets_at,five_hour_resets_at
+SELECT account_id,ts,seven_day,five_hour,sonnet,opus,seven_day_resets_at,five_hour_resets_at,
+       scoped_pct,scoped_label,scoped_resets_at
 FROM readings WHERE account_id=? AND ts>=? ORDER BY ts ASC`, accountID, sinceTS)
 	if err != nil {
 		return nil, err
@@ -356,7 +376,8 @@ FROM readings WHERE account_id=? AND ts>=? ORDER BY ts ASC`, accountID, sinceTS)
 	var out []Reading
 	for rows.Next() {
 		var r Reading
-		if err := rows.Scan(&r.AccountID, &r.TS, &r.SevenDay, &r.FiveHour, &r.Sonnet, &r.Opus, &r.SevenDayResetsAt, &r.FiveHourResetsAt); err != nil {
+		if err := rows.Scan(&r.AccountID, &r.TS, &r.SevenDay, &r.FiveHour, &r.Sonnet, &r.Opus, &r.SevenDayResetsAt, &r.FiveHourResetsAt,
+			&r.ScopedPct, &r.ScopedLabel, &r.ScopedResetsAt); err != nil {
 			return nil, err
 		}
 		out = append(out, r)

@@ -9,6 +9,7 @@
   "connect_oauth_note": "OAuth code exchange is currently often rate-limited (429) by the token endpoint; prefer ccquota connect above.",
   "seven_day_label": "7-Day Usage",
   "five_hour_label": "5-Hour Usage",
+  "scoped_label": "{model} Weekly",
   "sonnet_label": "Sonnet",
   "opus_label": "Opus",
   "resets_in": "Resets in",

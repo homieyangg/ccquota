@@ -9,6 +9,7 @@
   "connect_oauth_note": "OAuth code 交换目前常被 token endpoint 限流(429),建议改用上面的 ccquota connect。",
   "seven_day_label": "7 日用量",
   "five_hour_label": "5 小时用量",
+  "scoped_label": "{model} 周限",
   "sonnet_label": "Sonnet",
   "opus_label": "Opus",
   "resets_in": "重置倒计时",

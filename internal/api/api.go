@@ -390,6 +390,9 @@ type accountResp struct {
 	SevenDay         *float64 `json:"seven_day"`
 	FiveHour         *float64 `json:"five_hour"`
 	Sonnet           *float64 `json:"sonnet"`
+	ScopedPct        *float64 `json:"scoped_pct"`
+	ScopedLabel      string   `json:"scoped_label"`
+	ScopedResetsAt   *int64   `json:"scoped_resets_at"`
 	Opus             *float64 `json:"opus"`
 	SevenDayResetsAt *int64   `json:"seven_day_resets_at"`
 	FiveHourResetsAt *int64   `json:"five_hour_resets_at"`
@@ -425,6 +428,11 @@ func (h *handler) handleAccounts(w http.ResponseWriter, r *http.Request) {
 			ar.SevenDay = &reading.SevenDay
 			ar.FiveHour = &reading.FiveHour
 			ar.Sonnet = &reading.Sonnet
+			if reading.ScopedPct > 0 {
+				ar.ScopedPct = &reading.ScopedPct
+				ar.ScopedLabel = reading.ScopedLabel
+				ar.ScopedResetsAt = &reading.ScopedResetsAt
+			}
 			ar.Opus = &reading.Opus
 			ar.SevenDayResetsAt = &reading.SevenDayResetsAt
 			ar.FiveHourResetsAt = &reading.FiveHourResetsAt

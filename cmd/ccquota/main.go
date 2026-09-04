@@ -494,7 +494,10 @@ func runServe(s *store.Store) {
 								}
 							}
 						}
-						if err := n.Thresholds(ctx, a.ID, r.SevenDay, r.FiveHour, weeklyBudget, periodCost, r.SevenDayResetsAt, r.FiveHourResetsAt); err != nil {
+						// 週限告警看「先撞到的那條」:限定模型的 weekly_scoped 常遠高於 weekly_all,
+						// 只盯 SevenDay 會在真的被擋之前都不出聲。反推額度仍用 SevenDay(它才是完整週配額的分母)。
+						weeklyPct := max(r.SevenDay, r.ScopedPct)
+						if err := n.Thresholds(ctx, a.ID, weeklyPct, r.FiveHour, weeklyBudget, periodCost, r.SevenDayResetsAt, r.FiveHourResetsAt); err != nil {
 							log.Printf("alert thresholds error: %v", err)
 						}
 						// per-user 平分額度 advisory(預設關;notifier 內部會檢查啟用與 resets_at)。

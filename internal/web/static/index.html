@@ -152,6 +152,15 @@
                     <div class="mini-fill" :class="fillClass(acct.five_hour || 0)" :style="'width:' + clampPct(acct.five_hour) + '%'"></div>
                   </div>
                 </div>
+                <div class="sum-gauge" x-show="acct.scoped_pct" style="display:none">
+                  <div class="sum-gauge-head">
+                    <span class="sum-label" x-text="t('scoped_label').replace('{model}', acct.scoped_label || '')"></span>
+                    <span class="sum-gauge-pct" :class="fillClass(acct.scoped_pct || 0)" x-text="fmtPct(acct.scoped_pct)"></span>
+                  </div>
+                  <div class="mini-bar">
+                    <div class="mini-fill" :class="fillClass(acct.scoped_pct || 0)" :style="'width:' + clampPct(acct.scoped_pct) + '%'"></div>
+                  </div>
+                </div>
                 <div class="sum-metric" x-show="acct.has_reading" style="display:none">
                   <span class="sum-label" x-text="t('resets_in')"></span>
                   <strong x-text="countdown(acct.seven_day_resets_at)"></strong>

@@ -196,6 +196,7 @@ func (p *Poller) recordUsage(ctx context.Context, a store.Account, now int64, to
 		AccountID: a.ID, TS: now,
 		SevenDay: snap.SevenDay, FiveHour: snap.FiveHour, Sonnet: snap.Sonnet, Opus: snap.Opus,
 		SevenDayResetsAt: snap.SevenDayResetsAt, FiveHourResetsAt: snap.FiveHourResetsAt,
+		ScopedPct: snap.ScopedPct, ScopedLabel: snap.ScopedLabel, ScopedResetsAt: snap.ScopedResetsAt,
 	}); err != nil {
 		return err
 	}

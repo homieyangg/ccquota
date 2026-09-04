@@ -7,6 +7,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
 	collectorpb "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
@@ -116,6 +118,9 @@ func (h *handler) process(req *collectorpb.ExportMetricsServiceRequest) {
 	for _, rm := range req.GetResourceMetrics() {
 		account, userName, userID, ok := extractAccountUser(rm.GetResource().GetAttributes())
 		if !ok {
+			// 少了 ccquota.account 就無從歸屬。以前這裡靜靜丟掉,client 看不出自己沒被計到,
+			// 所以把實際收到的 attribute key 印出來,方便對照是哪一端的 OTEL_RESOURCE_ATTRIBUTES 沒帶上。
+			logDropped("missing ccquota.account", rm.GetResource().GetAttributes())
 			continue
 		}
 
@@ -129,6 +134,7 @@ func (h *handler) process(req *collectorpb.ExportMetricsServiceRequest) {
 			}
 		}
 		if user == "" {
+			logDropped("no display name for account="+account, rm.GetResource().GetAttributes())
 			continue
 		}
 		var totalCost float64
@@ -154,6 +160,31 @@ func (h *handler) process(req *collectorpb.ExportMetricsServiceRequest) {
 			log.Printf("ingest: InsertUserCost account=%s user=%s err=%v", account, user, err)
 		}
 	}
+}
+
+// dropLogEvery 節流丟棄日誌,避免一個設錯的 client 每分鐘洗版。
+const dropLogEvery = 5 * time.Minute
+
+var (
+	dropMu   sync.Mutex
+	dropLast = map[string]time.Time{}
+)
+
+// logDropped 印出被丟棄的 resource metrics 及其 attribute keys,同一原因每 5 分鐘最多一次。
+func logDropped(reason string, attrs []*commonpb.KeyValue) {
+	dropMu.Lock()
+	if t, seen := dropLast[reason]; seen && time.Since(t) < dropLogEvery {
+		dropMu.Unlock()
+		return
+	}
+	dropLast[reason] = time.Now()
+	dropMu.Unlock()
+
+	keys := make([]string, 0, len(attrs))
+	for _, kv := range attrs {
+		keys = append(keys, kv.GetKey())
+	}
+	log.Printf("ingest: dropped resource metrics (%s); attrs=[%s]", reason, strings.Join(keys, " "))
 }
 
 // extractAccountUser 從 resource attributes 讀取 ccquota.account、ccquota.user 和 user.id。
