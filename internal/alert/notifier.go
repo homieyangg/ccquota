@@ -140,10 +140,17 @@ func tierRank(tier string) int {
 	}
 }
 
-// Thresholds 根據 sevenDay / fiveHour 百分比決定是否發 warn/crit 通知。
+// Thresholds 以整體 7 日用量檢查門檻,等同 ThresholdsScoped 的 weeklyScope 留空。
+func (n *Notifier) Thresholds(ctx context.Context, account string, sevenDay, fiveHour, weeklyBudget, periodCost float64, sevenDayResetsAt, fiveHourResetsAt int64) error {
+	return n.ThresholdsScoped(ctx, account, "", sevenDay, fiveHour, weeklyBudget, periodCost, sevenDayResetsAt, fiveHourResetsAt)
+}
+
+// ThresholdsScoped 根據 weeklyPct / fiveHour 百分比決定是否發 warn/crit 通知。
+// weeklyScope 非空代表 weeklyPct 是限定模型的週限(例如 Fable),訊息會寫出是哪一條,
+// 不然通知會把模型週限的數字說成「7 日用量」。
 // weekly 同一視窗只有一則:warn 升 crit 時就地編輯既有訊息(不分兩則),由 weeklyEscalate 處理。
 // weeklyBudget / periodCost 用於 weekly 文案(反推額度、本週剩餘);5h crit 獨立判斷,沿用 alert_state dedup。
-func (n *Notifier) Thresholds(ctx context.Context, account string, sevenDay, fiveHour, weeklyBudget, periodCost float64, sevenDayResetsAt, fiveHourResetsAt int64) error {
+func (n *Notifier) ThresholdsScoped(ctx context.Context, account, weeklyScope string, sevenDay, fiveHour, weeklyBudget, periodCost float64, sevenDayResetsAt, fiveHourResetsAt int64) error {
 	if len(n.sinks) == 0 {
 		return nil
 	}
@@ -154,9 +161,9 @@ func (n *Notifier) Thresholds(ctx context.Context, account string, sevenDay, fiv
 		remaining = 0
 	}
 	if sevenDay >= n.cfg.weeklyCrit() {
-		n.weeklyEscalate(ctx, account, window, "crit", "weekly_crit", sevenDay, weeklyBudget, remaining)
+		n.weeklyEscalate(ctx, account, window, "crit", "weekly_crit", weeklyScope, sevenDay, weeklyBudget, remaining)
 	} else if sevenDay >= n.cfg.weeklyWarn() {
-		n.weeklyEscalate(ctx, account, window, "warn", "weekly_warn", sevenDay, weeklyBudget, remaining)
+		n.weeklyEscalate(ctx, account, window, "warn", "weekly_warn", weeklyScope, sevenDay, weeklyBudget, remaining)
 	}
 
 	if fiveHour >= n.cfg.fiveHourCrit() {
@@ -172,7 +179,7 @@ func (n *Notifier) Thresholds(ctx context.Context, account string, sevenDay, fiv
 // weeklyEscalate 對每個 sink 維護「該視窗一則訊息」:首次達標 Send,升級時就地 Edit。
 // 已達同層級或更高 → 跳過。Edit 失敗或 sink 不支援 → 退化成重送一則。
 // budgetSuffix 依語言渲染、budget≤0 時為空,避免顯示 $0。
-func (n *Notifier) weeklyEscalate(ctx context.Context, account, window, tier, tmplKey string, sevenDay, weeklyBudget, remaining float64) {
+func (n *Notifier) weeklyEscalate(ctx context.Context, account, window, tier, tmplKey, weeklyScope string, sevenDay, weeklyBudget, remaining float64) {
 	for _, s := range n.sinks {
 		key := s.Key()
 		prev, ok, err := n.store.GetAlertMessage(account, window, key)
@@ -187,7 +194,7 @@ func (n *Notifier) weeklyEscalate(ctx context.Context, account, window, tier, tm
 		if lang == "" {
 			lang = n.cfg.lang()
 		}
-		text := renderTemplate(lang, tmplKey, account, sevenDay, weeklyBudgetSuffix(lang, weeklyBudget, remaining))
+		text := renderTemplate(lang, tmplKey, account, weeklyLimitName(lang, weeklyScope), sevenDay, weeklyBudgetSuffix(lang, weeklyBudget, remaining))
 		if ok && prev.Ref != "" {
 			if editErr := s.Edit(ctx, prev.Ref, text); editErr == nil {
 				n.mustUpsertMsg(account, window, key, prev.Ref, tier)
@@ -201,6 +208,14 @@ func (n *Notifier) weeklyEscalate(ctx context.Context, account, window, tier, tm
 		}
 		n.mustUpsertMsg(account, window, key, ref, tier)
 	}
+}
+
+// weeklyLimitName 回傳訊息裡那條額度的名稱:scope 空是整體 7 日用量,否則是該模型的週限。
+func weeklyLimitName(lang, scope string) string {
+	if scope == "" {
+		return renderTemplate(lang, "weekly_name_all")
+	}
+	return renderTemplate(lang, "weekly_name_scoped", scope)
 }
 
 // weeklyBudgetSuffix 依語言組「反推額度/本週剩餘」尾段;budget≤0 回空字串。

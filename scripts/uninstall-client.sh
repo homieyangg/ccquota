@@ -13,8 +13,8 @@ msg() {
         need_jq)        echo "錯誤：需要 jq，請先安裝 (macOS: brew install jq / Debian、Ubuntu: sudo apt install jq / Windows: winget install jqlang.jq)" ;;
         no_settings)    echo "找不到設定檔，略過：$extra" ;;
         backed_up)      echo "已備份設定檔至：$extra" ;;
-        done)           echo "✓ 已移除 ccquota OTel 設定。請重新啟動 Claude Code。" ;;
-        restart)        echo "提示：關閉並重新開啟 Claude Code。" ;;
+        done)           echo "✓ 已移除 ccquota OTel 設定" ;;
+        restart)        echo "重開 Claude Code 後生效" ;;
         unknown_arg)    echo "錯誤：未知參數：$extra" ;;
         *)              echo "$key $extra" ;;
       esac
@@ -24,8 +24,8 @@ msg() {
         need_jq)        echo "错误：需要 jq，请先安装 (macOS: brew install jq / Debian、Ubuntu: sudo apt install jq / Windows: winget install jqlang.jq)" ;;
         no_settings)    echo "找不到配置文件，跳过：$extra" ;;
         backed_up)      echo "已备份配置文件至：$extra" ;;
-        done)           echo "✓ 已移除 ccquota OTel 配置。请重启 Claude Code。" ;;
-        restart)        echo "提示：关闭并重新打开 Claude Code。" ;;
+        done)           echo "✓ 已移除 ccquota OTel 配置" ;;
+        restart)        echo "重启 Claude Code 后生效" ;;
         unknown_arg)    echo "错误：未知参数：$extra" ;;
         *)              echo "$key $extra" ;;
       esac
@@ -35,8 +35,8 @@ msg() {
         need_jq)        echo "Error: jq is required. Install it first (macOS: brew install jq / Debian, Ubuntu: sudo apt install jq / Windows: winget install jqlang.jq)" ;;
         no_settings)    echo "Settings file not found, nothing to do: $extra" ;;
         backed_up)      echo "Backed up settings to: $extra" ;;
-        done)           echo "✓ ccquota OTel settings removed. Restart Claude Code to apply." ;;
-        restart)        echo "Hint: close and reopen Claude Code." ;;
+        done)           echo "✓ ccquota OTel settings removed" ;;
+        restart)        echo "Restart Claude Code to apply." ;;
         unknown_arg)    echo "Error: unknown argument: $extra" ;;
         *)              echo "$key $extra" ;;
       esac

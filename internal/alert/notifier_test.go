@@ -66,17 +66,18 @@ func TestTemplateRendering(t *testing.T) {
 		// en
 		{"en", "reset", []any{"acct1", 80.0, 5.0}, "Quota Reset"},
 		{"en", "reset", []any{"acct1", 80.0, 5.0}, "80%"},
-		{"en", "weekly_warn", []any{"acct1", 76.0}, "76%"},
-		{"en", "weekly_crit", []any{"acct1", 91.0}, "91%"},
+		{"en", "weekly_warn", []any{"acct1", "7-day usage", 76.0, ""}, "7-day usage at <b>76%"},
+		{"en", "weekly_crit", []any{"acct1", "Fable weekly limit", 91.0, ""}, "Fable weekly limit at <b>91%"},
 		{"en", "five_hour_crit", []any{"acct1", 96.0}, "96%"},
 		{"en", "stale", []any{"acct1", int64(3600)}, "3600"},
 		// zh-TW
 		{"zh-TW", "reset", []any{"acct1", 80.0, 5.0}, "重置"},
-		{"zh-TW", "weekly_warn", []any{"acct1", 76.0}, "週配額"},
-		{"zh-TW", "five_hour_crit", []any{"acct1", 96.0}, "5小時"},
+		{"zh-TW", "weekly_warn", []any{"acct1", "7 日用量", 76.0, ""}, "週額度警告"},
+		{"zh-TW", "weekly_name_scoped", []any{"Fable"}, "Fable 週限"},
+		{"zh-TW", "five_hour_crit", []any{"acct1", 96.0}, "5 小時額度緊急"},
 		// zh-CN
 		{"zh-CN", "reset", []any{"acct1", 80.0, 5.0}, "重置"},
-		{"zh-CN", "weekly_warn", []any{"acct1", 76.0}, "周配额"},
+		{"zh-CN", "weekly_warn", []any{"acct1", "7 日用量", 76.0, ""}, "周额度警告"},
 		// fallback: unknown lang → en
 		{"ja", "reset", []any{"acct1", 80.0, 5.0}, "Quota Reset"},
 		// fallback: unknown key → "" (en key missing → empty-ish; just no panic)
@@ -118,8 +119,8 @@ func TestNotifierReset(t *testing.T) {
 // TestWeeklyTemplateWithBudget:weekly 文案帶上反推額度與本週剩餘。
 func TestWeeklyTemplateWithBudget(t *testing.T) {
 	suffix := alert.RenderTemplate("zh-TW", "weekly_budget_suffix", 892.0, 214.0)
-	msg := alert.RenderTemplate("zh-TW", "weekly_warn", "main", 76.0, suffix)
-	for _, want := range []string{"76%", "892", "214"} {
+	msg := alert.RenderTemplate("zh-TW", "weekly_warn", "main", "7 日用量", 76.0, suffix)
+	for _, want := range []string{"7 日用量 <b>76%", "892", "214"} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("文案缺 %q: %q", want, msg)
 		}
@@ -267,5 +268,28 @@ func TestStaleThrottle(t *testing.T) {
 	_ = n.Stale(context.Background(), "acct1", 23400)
 	if len(sink.msgs) != 2 {
 		t.Fatalf("new bucket: want 2 msgs, got %d", len(sink.msgs))
+	}
+}
+
+// TestThresholdsScopedNamesTheLimit:觸發的是模型週限時,訊息要寫出模型名,
+// 不能把它的數字說成 7 日用量。
+func TestThresholdsScopedNamesTheLimit(t *testing.T) {
+	s := openMemStore(t)
+	sink := &captureSink{}
+	n := alert.NewNotifier(alert.Config{Lang: "zh-TW", WeeklyWarn: 75, WeeklyCrit: 90, FiveHourCrit: 95}, s, sink)
+
+	_ = n.ThresholdsScoped(context.Background(), "main", "Fable", 91, 10, 0, 0, 1000, 2000)
+	if len(sink.msgs) != 1 || !strings.Contains(sink.msgs[0], "Fable 週限 <b>91%") {
+		t.Fatalf("應寫出 Fable 週限 91%%,得 %q", sink.msgs)
+	}
+	if strings.Contains(sink.msgs[0], "7 日用量") {
+		t.Errorf("模型週限觸發時不該寫 7 日用量: %q", sink.msgs[0])
+	}
+
+	sink2 := &captureSink{}
+	n2 := alert.NewNotifier(alert.Config{Lang: "zh-TW", WeeklyWarn: 75, WeeklyCrit: 90, FiveHourCrit: 95}, openMemStore(t), sink2)
+	_ = n2.Thresholds(context.Background(), "main", 76, 10, 0, 0, 1000, 2000)
+	if len(sink2.msgs) != 1 || !strings.Contains(sink2.msgs[0], "7 日用量 <b>76%") {
+		t.Fatalf("整體週限應寫 7 日用量 76%%,得 %q", sink2.msgs)
 	}
 }

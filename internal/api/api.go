@@ -730,8 +730,8 @@ msg() {
         need_jq)  echo "錯誤：需要 jq，請先安裝 (macOS: brew install jq / Debian、Ubuntu: sudo apt install jq / Windows: winget install jqlang.jq)" ;;
         backed_up) echo "已備份設定檔至：$extra" ;;
         created)  echo "已建立新設定檔：$extra" ;;
-        done)     echo "✓ 安裝完成！請重新啟動 Claude Code 以套用設定。" ;;
-        restart)  echo "提示：關閉並重新開啟 Claude Code。" ;;
+        done)     echo "✓ 安裝完成" ;;
+        restart)  echo "重開 Claude Code 後生效" ;;
         sl_hint)  echo "沒有動 Claude Code 的 statusline。想在 statusline 顯示額度，改跑：$extra" ;;
         *)        echo "$key $extra" ;;
       esac ;;
@@ -740,8 +740,8 @@ msg() {
         need_jq)  echo "错误：需要 jq，请先安装 (macOS: brew install jq / Debian、Ubuntu: sudo apt install jq / Windows: winget install jqlang.jq)" ;;
         backed_up) echo "已备份配置文件至：$extra" ;;
         created)  echo "已创建新配置文件：$extra" ;;
-        done)     echo "✓ 安装完成！请重启 Claude Code 以应用配置。" ;;
-        restart)  echo "提示：关闭并重新打开 Claude Code。" ;;
+        done)     echo "✓ 安装完成" ;;
+        restart)  echo "重启 Claude Code 后生效" ;;
         sl_hint)  echo "没有改动 Claude Code 的 statusline。想在 statusline 显示额度，改跑：$extra" ;;
         *)        echo "$key $extra" ;;
       esac ;;
@@ -750,8 +750,8 @@ msg() {
         need_jq)  echo "Error: jq is required. Install it first (macOS: brew install jq / Debian, Ubuntu: sudo apt install jq / Windows: winget install jqlang.jq)" ;;
         backed_up) echo "Backed up settings to: $extra" ;;
         created)  echo "Created settings file: $extra" ;;
-        done)     echo "✓ Installation complete! Restart Claude Code to apply settings." ;;
-        restart)  echo "Hint: close and reopen Claude Code." ;;
+        done)     echo "✓ Installation complete" ;;
+        restart)  echo "Restart Claude Code to apply the settings." ;;
         sl_hint)  echo "Claude Code's status line was left untouched. To show quota there, run: $extra" ;;
         *)        echo "$key $extra" ;;
       esac ;;
