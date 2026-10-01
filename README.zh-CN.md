@@ -87,7 +87,7 @@ ccquota set-token --id main --label "Shared Claude"
 
 点 **添加用户** 生成安装命令,或在用户卡片按 **复制安装链接**。
 
-![添加用户](.github/assets/enroll.png)
+<img src=".github/assets/enroll.png" alt="添加用户" width="520">
 
 在那个人的每台电脑上跑:
 

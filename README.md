@@ -87,7 +87,7 @@ Per-user cost needs `CCQUOTA_INGEST_TOKEN`. The install script generates one. Wi
 
 Click **Add User** to generate the install command, or use **Copy install link** on a user card.
 
-![Add User](.github/assets/enroll.png)
+<img src=".github/assets/enroll.png" alt="Add User" width="520">
 
 Run it on each of that person's machines:
 
