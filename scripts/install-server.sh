@@ -52,15 +52,10 @@ if curl -fsSL -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" 2>/dev/null; then
   fi
 fi
 chmod +x "$tmp/$asset"
+# Apple Silicon 的 macOS 預設沒有 /usr/local/bin。
+$sudo_cmd mkdir -p "$BIN_DIR"
 $sudo_cmd install -m 755 "$tmp/$asset" "$BIN_DIR/ccquota"
 echo "Installed ccquota ${tag} to ${BIN_DIR}/ccquota"
-
-if ! command -v systemctl >/dev/null 2>&1; then
-  echo
-  echo "No systemd here. Start it manually:"
-  echo "  CCQUOTA_DB=${DATA_DIR}/ccquota.db ${BIN_DIR}/ccquota serve --addr ${ADDR}"
-  exit 0
-fi
 
 $sudo_cmd mkdir -p "$DATA_DIR"
 $sudo_cmd chown -R "$RUN_USER" "$(dirname "$DATA_DIR")" 2>/dev/null || true
@@ -70,6 +65,16 @@ if [ ! -f "$envfile" ]; then
   ingest=$(openssl rand -hex 24 2>/dev/null || head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')
   printf 'CCQUOTA_DB=%s/ccquota.db\nCCQUOTA_INGEST_TOKEN=%s\n' "$DATA_DIR" "$ingest" | $sudo_cmd tee "$envfile" >/dev/null
   $sudo_cmd chmod 600 "$envfile"
+fi
+
+# macOS、WSL、容器這類沒有 systemd 的環境:binary 與資料目錄都備好,只差自己啟動。
+if ! command -v systemctl >/dev/null 2>&1 || [ ! -d /run/systemd/system ]; then
+  $sudo_cmd chown "$RUN_USER" "$envfile" 2>/dev/null || true
+  echo
+  echo "No systemd here. Start it manually:"
+  echo "  env \$(cat ${envfile}) ${BIN_DIR}/ccquota serve --addr ${ADDR}"
+  echo "The admin password is printed on first start."
+  exit 0
 fi
 
 $sudo_cmd tee /etc/systemd/system/ccquota.service >/dev/null <<EOF

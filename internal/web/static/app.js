@@ -128,6 +128,14 @@ function _fmtBucketTime(ts) {
 
 // drawSeriesChart 畫面積 + 線時序圖;滑鼠移上去顯示十字線、節點與數值 tooltip。
 // fmt(value) 回傳 tooltip 顯示的數值字串。
+// installCommand 組出成員要貼的一行安裝指令。
+// -A 自報 UA:有些反代/WAF 會擋預設 curl UA,帶一個明確 UA 才抓得到腳本。
+// 用 pipe 不用 bash <(...):process substitution 只有 bash、zsh 認得,fish、sh、PowerShell 會報錯。
+// statusline 會改 Claude Code 的狀態列,所以是選配,勾了才帶 --statusline。
+function installCommand(url, withStatusline) {
+  return `curl -fsSL -A ccquota-setup ${url} | bash` + (withStatusline ? ' -s -- --statusline' : '');
+}
+
 function drawSeriesChart(canvas, points, valueFn, color, fmt) {
   const dpr = window.devicePixelRatio || 1;
   const w = canvas.offsetWidth || 300;
@@ -213,7 +221,9 @@ document.addEventListener('alpine:init', () => {
     // enroll form
     enrollAccount: '',
     enrollUser: '',
-    enrollOneliner: '',
+    enrollUrl: '',
+    enrollStatusline: false,
+    get enrollOneliner() { return this.enrollUrl ? installCommand(this.enrollUrl, this.enrollStatusline) : ''; },
     enrollMsg: '',
     enrollMsgType: '', // 'success' | 'error'
     enrollBtnDisabled: false,
@@ -688,7 +698,7 @@ document.addEventListener('alpine:init', () => {
     async copyInstall(account, user) {
       try {
         const data = await apiPost('/api/enroll', { account, user });
-        await navigator.clipboard.writeText(`bash <(curl -fsSL -A ccquota-setup ${data.url})`);
+        await navigator.clipboard.writeText(installCommand(data.url, false));
         this.copyMsg = user; setTimeout(() => { this.copyMsg = ''; }, 1500);
       } catch (e) { console.error('copy install', e); }
     },
@@ -729,7 +739,8 @@ document.addEventListener('alpine:init', () => {
       this.$refs.enrollDialog.close();
       // 重置 enroll 暫態
       this.enrollUser = '';
-      this.enrollOneliner = '';
+      this.enrollUrl = '';
+      this.enrollStatusline = false;
       this.enrollMsg = '';
       this.enrollMsgType = '';
       this.enrollBtnDisabled = false;
@@ -741,14 +752,13 @@ document.addEventListener('alpine:init', () => {
       this.enrollBtnDisabled = true;
       this.enrollMsg = '';
       this.enrollMsgType = '';
-      this.enrollOneliner = '';
+      this.enrollUrl = '';
       try {
         const data = await apiPost('/api/enroll', {
           account: this.enrollAccount,
           user: this.enrollUser,
         });
-        // -A 自報 UA:有些反代/WAF 會擋預設 curl UA(例如擋 bot),帶一個明確 UA 才抓得到腳本。
-        this.enrollOneliner = `bash <(curl -fsSL -A ccquota-setup ${data.url})`;
+        this.enrollUrl = data.url;
       } catch (e) {
         this.enrollMsg = this.t('enroll_error') + ' ' + e.message;
         this.enrollMsgType = 'error';

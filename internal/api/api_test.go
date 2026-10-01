@@ -15,6 +15,8 @@ import (
 	"github.com/ccquota/ccquota/internal/oauth"
 	"github.com/ccquota/ccquota/internal/secret"
 	"github.com/ccquota/ccquota/internal/store"
+	"os/exec"
+	"path/filepath"
 )
 
 func testStore(t *testing.T) *store.Store {
@@ -954,5 +956,94 @@ func TestNotificationsThresholdsRoundTrip(t *testing.T) {
 	}
 	if out.Thresholds.ResetNotify {
 		t.Error("ResetNotify want false")
+	}
+}
+
+// enrollScript 建立一條安裝連結並回傳 /e/<token> 產出的腳本內容。
+func enrollScript(t *testing.T, h http.Handler) string {
+	t.Helper()
+	body, _ := json.Marshal(map[string]string{"account": "main", "user": "alice"})
+	req := httptest.NewRequest(http.MethodPost, "/api/enroll", bytes.NewReader(body))
+	req.SetBasicAuth("admin", AdminPassword)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	var resp map[string]any
+	json.NewDecoder(w.Body).Decode(&resp)
+	url, _ := resp["url"].(string)
+	parts := strings.Split(url, "/e/")
+	if len(parts) != 2 {
+		t.Fatalf("unexpected url format: %q", url)
+	}
+	w2 := httptest.NewRecorder()
+	h.ServeHTTP(w2, httptest.NewRequest(http.MethodGet, "/e/"+parts[1], nil))
+	return w2.Body.String()
+}
+
+// TestEnrollScriptStatuslineOptIn:實際跑產出的腳本。預設只寫 OTel 設定、不碰 statusLine,
+// 加 --statusline 才裝 statusline 腳本並改 settings.json。
+func TestEnrollScriptStatuslineOptIn(t *testing.T) {
+	for _, bin := range []string{"bash", "jq", "curl"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			t.Skipf("%s not available", bin)
+		}
+	}
+	// 假的 raw 檔案來源,讓腳本抓 statusline 腳本時不必連外網。
+	raw := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("#!/usr/bin/env bash\necho stub\n"))
+	}))
+	defer raw.Close()
+
+	s := testStore(t)
+	h := New(s, &oauth.Client{}, 1800, "itok", "https://demo.example", testCipher(t), "dev")
+	script := enrollScript(t, h)
+
+	run := func(args ...string) (home, out string) {
+		home = t.TempDir()
+		cmd := exec.Command("bash", append([]string{"-s", "--"}, args...)...)
+		cmd.Stdin = strings.NewReader(script)
+		cmd.Env = append(os.Environ(), "HOME="+home, "CCQUOTA_REPO_RAW="+raw.URL, "CLAUDE_CONFIG_DIR=", "CCQUOTA_STATUSLINE=")
+		b, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("script failed: %v\n%s", err, b)
+		}
+		return home, string(b)
+	}
+	settings := func(home string) map[string]any {
+		b, err := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+
+	home, out := run()
+	m := settings(home)
+	if env, _ := m["env"].(map[string]any); env["OTEL_EXPORTER_OTLP_ENDPOINT"] != "https://demo.example" {
+		t.Errorf("預設仍要寫 OTel 設定,得 %v", m["env"])
+	}
+	if _, has := m["statusLine"]; has {
+		t.Errorf("預設不該動 statusLine: %v", m["statusLine"])
+	}
+	if _, err := os.Stat(filepath.Join(home, ".ccquota")); err == nil {
+		t.Error("預設不該建立 ~/.ccquota")
+	}
+	if !strings.Contains(out, "| bash -s -- --statusline") {
+		t.Errorf("應提示加裝 statusline 的指令,輸出:\n%s", out)
+	}
+
+	home, _ = run("--statusline")
+	sl, _ := settings(home)["statusLine"].(map[string]any)
+	if cmd, _ := sl["command"].(string); !strings.Contains(cmd, ".ccquota/statusline-wrap.sh") {
+		t.Errorf("--statusline 應把 statusLine 指到 wrap,得 %v", sl)
+	}
+	for _, f := range []string{"statusline.sh", "statusline-wrap.sh", "config"} {
+		if _, err := os.Stat(filepath.Join(home, ".ccquota", f)); err != nil {
+			t.Errorf("--statusline 應裝好 %s: %v", f, err)
+		}
 	}
 }

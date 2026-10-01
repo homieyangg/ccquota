@@ -11,7 +11,7 @@ msg() {
   case "$LANG_SEL" in
     zh-TW)
       case "$key" in
-        need_jq)         echo "錯誤：需要 jq，請先安裝 (brew install jq)" ;;
+        need_jq)         echo "錯誤：需要 jq，請先安裝 (macOS: brew install jq / Debian、Ubuntu: sudo apt install jq / Windows: winget install jqlang.jq)" ;;
         missing_server)  echo "錯誤：缺少 --server 參數" ;;
         missing_account) echo "錯誤：缺少 --account 參數" ;;
         missing_user)    echo "錯誤：缺少 --user 參數" ;;
@@ -26,7 +26,7 @@ msg() {
       ;;
     zh-CN)
       case "$key" in
-        need_jq)         echo "错误：需要 jq，请先安装 (brew install jq)" ;;
+        need_jq)         echo "错误：需要 jq，请先安装 (macOS: brew install jq / Debian、Ubuntu: sudo apt install jq / Windows: winget install jqlang.jq)" ;;
         missing_server)  echo "错误：缺少 --server 参数" ;;
         missing_account) echo "错误：缺少 --account 参数" ;;
         missing_user)    echo "错误：缺少 --user 参数" ;;
@@ -41,7 +41,7 @@ msg() {
       ;;
     *)  # en (default)
       case "$key" in
-        need_jq)         echo "Error: jq is required. Install it first (brew install jq)" ;;
+        need_jq)         echo "Error: jq is required. Install it first (macOS: brew install jq / Debian, Ubuntu: sudo apt install jq / Windows: winget install jqlang.jq)" ;;
         missing_server)  echo "Error: --server is required" ;;
         missing_account) echo "Error: --account is required" ;;
         missing_user)    echo "Error: --user is required" ;;

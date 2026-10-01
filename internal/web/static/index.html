@@ -361,6 +361,10 @@
                 <button @click="copyEnrollLink()" x-text="t('enroll_copy_btn')">Copy</button>
               </div>
             </div>
+            <label class="enroll-opt">
+              <input type="checkbox" x-model="enrollStatusline">
+              <span x-text="t('enroll_statusline_label')"></span>
+            </label>
             <div class="cost-note" x-text="t('enroll_expires_note')"></div>
           </div>
 

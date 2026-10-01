@@ -434,7 +434,8 @@ button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.1
 /* 帳號摘要列：metric 之間用細分隔線，數字 tabular */
 .account-summary {
   display: flex; flex-wrap: wrap; align-items: center;
-  gap: 28px;
+  /* 三條 gauge + 三個 metric 要在 1280px 寬的英文介面排成一列,欄距再大就會把最後一個擠到下一行 */
+  gap: 14px 12px;
   padding: 14px 18px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -447,12 +448,12 @@ button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.1
 .account-summary .sum-label { font-size: 11px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .03em; }
 .account-summary .sum-metric strong { font-size: 15px; font-variant-numeric: tabular-nums; color: var(--ink); }
 .account-summary .sum-id { font-family: var(--mono); font-size: 11px; color: var(--ink-3); }
-.account-summary .sum-name { display: flex; flex-direction: column; gap: 1px; margin-right: 4px; }
+.account-summary .sum-name { display: flex; flex-direction: column; gap: 1px; }
 .account-summary .sum-name strong { font-size: 16px; letter-spacing: -0.01em; }
 
 /* 7d / 5h 狀態 gauge chip:label + 迷你進度條 + 百分比(顏色只給狀態) */
 .sum-gauge { display: flex; flex-direction: column; gap: 6px; min-width: 104px; }
-.sum-gauge-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.sum-gauge-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .sum-gauge-pct { font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .mini-bar { height: 5px; background: var(--track); border-radius: 3px; overflow: hidden; }
 .mini-fill { height: 100%; border-radius: 3px; transition: width .3s ease; }
@@ -463,6 +464,10 @@ button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(24, 24, 27, 0.1
 .mini-fill.fill-green, .share-fill.fill-green { background: var(--green-fill); }
 .mini-fill.fill-yellow, .share-fill.fill-yellow { background: var(--amber-fill); }
 .mini-fill.fill-red, .share-fill.fill-red { background: var(--red-fill); }
+
+/* 新增使用者彈窗:是否加裝 statusline 的勾選列 */
+.enroll-opt { display: flex; align-items: flex-start; gap: 8px; margin: 10px 0 4px; font-size: 13px; color: var(--ink-2); cursor: pointer; }
+.enroll-opt input { margin-top: 2px; }
 
 /* 使用者區塊標題 */
 .users-heading { font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 12px; }

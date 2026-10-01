@@ -10,7 +10,8 @@ CACHE="$DIR/quota.cache"
 TTL="${CCQUOTA_STATUSLINE_TTL:-60}"
 [ -f "$DIR/config" ] && . "$DIR/config"
 
-mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
+# GNU 的寫法先試:Linux 上 `stat -f` 是印檔案系統資訊,會吐一堆字而不是 mtime。
+mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0; }
 
 # cache 新鮮就直接用(且非測試模式)。
 if [ -z "${CCQUOTA_QUOTA_JSON:-}" ] && [ -f "$CACHE" ]; then

@@ -727,33 +727,42 @@ msg() {
   case "$LANG_SEL" in
     zh-TW)
       case "$key" in
-        need_jq)  echo "錯誤：需要 jq，請先安裝 (brew install jq)" ;;
+        need_jq)  echo "錯誤：需要 jq，請先安裝 (macOS: brew install jq / Debian、Ubuntu: sudo apt install jq / Windows: winget install jqlang.jq)" ;;
         backed_up) echo "已備份設定檔至：$extra" ;;
         created)  echo "已建立新設定檔：$extra" ;;
         done)     echo "✓ 安裝完成！請重新啟動 Claude Code 以套用設定。" ;;
         restart)  echo "提示：關閉並重新開啟 Claude Code。" ;;
+        sl_hint)  echo "沒有動 Claude Code 的 statusline。想在 statusline 顯示額度，改跑：$extra" ;;
         *)        echo "$key $extra" ;;
       esac ;;
     zh-CN)
       case "$key" in
-        need_jq)  echo "错误：需要 jq，请先安装 (brew install jq)" ;;
+        need_jq)  echo "错误：需要 jq，请先安装 (macOS: brew install jq / Debian、Ubuntu: sudo apt install jq / Windows: winget install jqlang.jq)" ;;
         backed_up) echo "已备份配置文件至：$extra" ;;
         created)  echo "已创建新配置文件：$extra" ;;
         done)     echo "✓ 安装完成！请重启 Claude Code 以应用配置。" ;;
         restart)  echo "提示：关闭并重新打开 Claude Code。" ;;
+        sl_hint)  echo "没有改动 Claude Code 的 statusline。想在 statusline 显示额度，改跑：$extra" ;;
         *)        echo "$key $extra" ;;
       esac ;;
     *)
       case "$key" in
-        need_jq)  echo "Error: jq is required. Install it first (brew install jq)" ;;
+        need_jq)  echo "Error: jq is required. Install it first (macOS: brew install jq / Debian, Ubuntu: sudo apt install jq / Windows: winget install jqlang.jq)" ;;
         backed_up) echo "Backed up settings to: $extra" ;;
         created)  echo "Created settings file: $extra" ;;
         done)     echo "✓ Installation complete! Restart Claude Code to apply settings." ;;
         restart)  echo "Hint: close and reopen Claude Code." ;;
+        sl_hint)  echo "Claude Code's status line was left untouched. To show quota there, run: $extra" ;;
         *)        echo "$key $extra" ;;
       esac ;;
   esac
 }
+
+# statusline 會改 Claude Code 的狀態列,預設不裝,要的人加 --statusline(或設 CCQUOTA_STATUSLINE=1)。
+WITH_STATUSLINE="${CCQUOTA_STATUSLINE:-0}"
+for arg in "$@"; do
+  case "$arg" in --statusline) WITH_STATUSLINE=1 ;; esac
+done
 
 if ! command -v jq &>/dev/null; then
   msg need_jq >&2
@@ -764,6 +773,7 @@ SERVER={{.Server}}
 ACCOUNT={{.Account}}
 USER_NAME={{.User}}
 TOKEN={{.Token}}
+ENROLL_URL={{.URL}}
 
 if [[ -n "${CLAUDE_CONFIG_DIR:-}" ]]; then
   SETTINGS_FILE="$CLAUDE_CONFIG_DIR/settings.json"
@@ -806,7 +816,9 @@ RAW_BASE="${CCQUOTA_REPO_RAW:-https://raw.githubusercontent.com/homieyangg/ccquo
 # 由 wrap 當統一入口:有既有 statusLine 就包起來、跑完接上 ccquota 個人 share;沒有就出完整 ccquota 行。
 SL="$HOME/.ccquota/statusline.sh"
 WRAP="$HOME/.ccquota/statusline-wrap.sh"
-if curl -fsSL "$RAW_BASE/scripts/statusline.sh" -o "$SL" 2>/dev/null; then
+if [ "$WITH_STATUSLINE" != "1" ]; then
+  msg sl_hint "curl -fsSL -A ccquota-setup $ENROLL_URL | bash -s -- --statusline"
+elif mkdir -p "$HOME/.ccquota" && curl -fsSL "$RAW_BASE/scripts/statusline.sh" -o "$SL" 2>/dev/null; then
   chmod +x "$SL"
   curl -fsSL "$RAW_BASE/scripts/statusline-wrap.sh" -o "$WRAP" 2>/dev/null && chmod +x "$WRAP"
   {
@@ -844,6 +856,7 @@ type scriptData struct {
 	Account string
 	User    string
 	Token   string
+	URL     string // 這條安裝連結本身,給「怎麼加裝 statusline」的提示用
 }
 
 // shellQuote 對字串做單引號 shell escape。
@@ -872,6 +885,7 @@ func (h *handler) handleEnrollScript(w http.ResponseWriter, r *http.Request) {
 		Account: shellQuote(accountID),
 		User:    shellQuote(user),
 		Token:   shellQuote(h.ingestToken),
+		URL:     shellQuote(base + "/e/" + token),
 	})
 }
 
