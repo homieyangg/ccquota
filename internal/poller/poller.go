@@ -34,9 +34,16 @@ type Poller struct {
 	Now           func() int64 // default time.Now().Unix
 	OnReset       func(account string, from, to float64)
 
-	mu      sync.Mutex
-	gate    map[string]int64 // accountID -> 在此 unix 時間前不再嘗試 refresh
-	backoff map[string]int64 // accountID -> 目前退避秒數
+	// Probe 系列:usage endpoint 拿不到資料時的後備來源(一年期 token + 讀 response header)。
+	// ProbeToken 是某一個帳號的 token,所以只套用在 ProbeAccount 那個帳號上。
+	Probe        UsageFetcher
+	ProbeToken   string
+	ProbeAccount string
+
+	mu        sync.Mutex
+	gate      map[string]int64 // accountID -> 在此 unix 時間前不再嘗試 refresh
+	backoff   map[string]int64 // accountID -> 目前退避秒數
+	probeNote map[string]int64 // accountID -> 上次印「改用 probe」的時間,節流用
 }
 
 func (p *Poller) minBackoff() int64 {
@@ -101,9 +108,35 @@ func (p *Poller) now() int64 {
 // access token 壽命 8 小時,所以正常情況一天仍只換三到四次。
 const credsRefreshAhead = 7200
 
+// probeNoteEvery:改用 probe 後每輪都會走後備,原因只需偶爾印一次。
+const probeNoteEvery = 6 * 3600
+
+// cycle 先走 usage endpoint(免費、欄位最完整),失敗且該帳號有設 probe token 時改用 probe。
+// 登入過期後 dashboard 仍有資料,不必為了額度數字每四週重登一次。
 func (p *Poller) cycle(ctx context.Context, a store.Account) error {
 	now := p.now()
+	err := p.cycleEndpoint(ctx, a, now)
+	if err == nil || p.Probe == nil || p.ProbeToken == "" || a.ID != p.ProbeAccount {
+		return err
+	}
+	if perr := p.recordUsage(ctx, a, now, p.Probe, p.ProbeToken); perr != nil {
+		return fmt.Errorf("%v; probe fallback: %w", err, perr)
+	}
+	p.mu.Lock()
+	if p.probeNote == nil {
+		p.probeNote = map[string]int64{}
+	}
+	last, seen := p.probeNote[a.ID]
+	if !seen || now-last >= probeNoteEvery {
+		p.probeNote[a.ID] = now
+		log.Printf("account %s: usage endpoint unavailable, reading limits from probe headers instead: %v", a.ID, err)
+	}
+	p.mu.Unlock()
+	return nil
+}
 
+// cycleEndpoint 用帳號自己的登入 token 打 usage endpoint。
+func (p *Poller) cycleEndpoint(ctx context.Context, a store.Account, now int64) error {
 	// CLI-backed 帳號:token 存在本機 claude creds 檔,refresh 後寫回同一個檔。
 	if a.CredsPath != "" {
 		return p.cycleCLIBacked(ctx, a, now)
@@ -142,7 +175,7 @@ func (p *Poller) cycle(ctx context.Context, a store.Account) error {
 	if a.AccessToken == "" {
 		return nil
 	}
-	return p.recordUsage(ctx, a, now, a.AccessToken)
+	return p.recordUsage(ctx, a, now, p.Usage, a.AccessToken)
 }
 
 // cycleCLIBacked 處理 CLI-backed 帳號:讀本機 creds、快到期時自行 refresh 並寫回檔案、拉 usage。
@@ -177,12 +210,16 @@ func (p *Poller) cycleCLIBacked(ctx context.Context, a store.Account, now int64)
 	if token == "" {
 		return fmt.Errorf("account %s: creds %s has no access token", a.ID, a.CredsPath)
 	}
-	return p.recordUsage(ctx, a, now, token)
+	// 過期又換不到新的就別打了:拿過期 token 每輪去撞只會換來 401,還會累積成 429 限流。
+	if exp > 0 && now >= exp {
+		return fmt.Errorf("account %s: access token expired and not refreshed, run: claude auth login", a.ID)
+	}
+	return p.recordUsage(ctx, a, now, p.Usage, token)
 }
 
-// recordUsage 用 token 拉 usage、寫 reading、偵測重置。一般 cycle 與 CLI-backed 共用。
-func (p *Poller) recordUsage(ctx context.Context, a store.Account, now int64, token string) error {
-	snap, err := p.Usage.Fetch(ctx, token)
+// recordUsage 用指定來源與 token 拉 usage、寫 reading、偵測重置。endpoint 與 probe 共用。
+func (p *Poller) recordUsage(ctx context.Context, a store.Account, now int64, src UsageFetcher, token string) error {
+	snap, err := src.Fetch(ctx, token)
 	if err != nil {
 		return err
 	}
@@ -190,6 +227,10 @@ func (p *Poller) recordUsage(ctx context.Context, a store.Account, now int64, to
 	prev, hadPrev, err := p.Store.LatestReading(a.ID)
 	if err != nil {
 		return err
+	}
+	// probe 的 header 不帶模型名,沿用 usage endpoint 先前給過的,dashboard 標籤才不會變空白。
+	if snap.ScopedLabel == "" && snap.ScopedResetsAt > 0 && hadPrev {
+		snap.ScopedLabel = prev.ScopedLabel
 	}
 
 	if err := p.Store.InsertReading(store.Reading{

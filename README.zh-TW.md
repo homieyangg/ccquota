@@ -82,6 +82,9 @@ bash <(curl -fsSL -A ccquota-setup https://your-host/e/TOKEN)
 | `CCQUOTA_PUBLIC_URL` | 自動推導 | 安裝連結用的對外網址。 |
 | `CCQUOTA_SECRET_KEY` | keyfile | 加密頻道密鑰用的 base64 32-byte key。未設時會在 DB 旁產生 keyfile。 |
 | `CCQUOTA_ENROLL_TTL_DAYS` | `30` | 安裝連結有效天數。 |
+| `CCQUOTA_PROBE_TOKEN` | 未設 | `claude setup-token` 產生的一年期 token。帳號登入過期、usage endpoint 讀不到時,改發一個 1 token 的請求從 response header 讀額度。 |
+| `CCQUOTA_PROBE_ACCOUNT` | `main` | 那顆 token 所屬的帳號 id。 |
+| `CCQUOTA_PROBE_MODEL` | `claude-fable-5-1` | probe 請求打的模型。要打有模型別週限的那個,才讀得到該週限。 |
 
 通知(頻道與告警門檻)在 **設定 → 通知** 裡設,不走環境變數。
 

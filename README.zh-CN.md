@@ -82,6 +82,9 @@ bash <(curl -fsSL -A ccquota-setup https://your-host/e/TOKEN)
 | `CCQUOTA_PUBLIC_URL` | 自动推导 | 安装链接用的对外网址。 |
 | `CCQUOTA_SECRET_KEY` | keyfile | 加密频道密钥用的 base64 32-byte key。未设时会在 DB 旁生成 keyfile。 |
 | `CCQUOTA_ENROLL_TTL_DAYS` | `30` | 安装链接有效天数。 |
+| `CCQUOTA_PROBE_TOKEN` | 未设 | `claude setup-token` 生成的一年期 token。账号登录过期、usage endpoint 读不到时,改发一个 1 token 的请求从 response header 读额度。 |
+| `CCQUOTA_PROBE_ACCOUNT` | `main` | 那个 token 所属的账号 id。 |
+| `CCQUOTA_PROBE_MODEL` | `claude-fable-5-1` | probe 请求打的模型。要打有模型级周限的那个,才读得到该周限。 |
 
 通知(频道与告警门槛)在 **设定 → 通知** 里设,不走环境变量。
 

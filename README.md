@@ -82,6 +82,9 @@ After enrolling, your Claude Code statusline shows the account quota: 5h:23% 7d:
 | `CCQUOTA_PUBLIC_URL` | derived | Public URL baked into install links. |
 | `CCQUOTA_SECRET_KEY` | keyfile | Base64 32-byte key for encrypting channel secrets. A keyfile is generated next to the DB if unset. |
 | `CCQUOTA_ENROLL_TTL_DAYS` | `30` | How long an install link stays valid. |
+| `CCQUOTA_PROBE_TOKEN` | unset | One-year token from `claude setup-token`. When the account login has expired and the usage endpoint is unreadable, ccquota sends a 1-token request and reads the limits from the response headers instead. |
+| `CCQUOTA_PROBE_ACCOUNT` | `main` | Account id that token belongs to. |
+| `CCQUOTA_PROBE_MODEL` | `claude-fable-5-1` | Model the probe request targets. Use the one with a model-scoped weekly limit so that limit is reported too. |
 
 Notifications (channels and alert thresholds) are configured in **Settings → Notifications**, not env.
 

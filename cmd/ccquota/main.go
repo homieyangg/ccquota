@@ -333,11 +333,21 @@ func buildNotifierFromStore(s *store.Store, c *secret.Cipher) *alert.Notifier {
 }
 
 func buildPoller(s *store.Store) *poller.Poller {
-	return &poller.Poller{
+	p := &poller.Poller{
 		Store: s,
 		Usage: &usage.Client{},
 		OAuth: &oauth.Client{},
 	}
+	// `claude setup-token` 產生的一年期 token。設了之後登入過期也還有額度資料。
+	if tok := os.Getenv("CCQUOTA_PROBE_TOKEN"); tok != "" {
+		p.Probe = &usage.ProbeClient{Model: os.Getenv("CCQUOTA_PROBE_MODEL")}
+		p.ProbeToken = tok
+		p.ProbeAccount = os.Getenv("CCQUOTA_PROBE_ACCOUNT")
+		if p.ProbeAccount == "" {
+			p.ProbeAccount = "main"
+		}
+	}
+	return p
 }
 
 // findClaude 找本機 claude CLI(PATH 或常見安裝路徑)。

@@ -163,3 +163,94 @@ func TestCycleCLIBackedRefreshFailKeepsToken(t *testing.T) {
 		t.Errorf("refresh 失敗不該動 creds 檔,得 %v", got)
 	}
 }
+
+// failingUsage 模擬 usage endpoint 壞掉(登入過期後的 401)。
+type failingUsage struct{ calls int }
+
+func (f *failingUsage) Fetch(context.Context, string) (usage.Snapshot, error) {
+	f.calls++
+	return usage.Snapshot{}, errors.New("usage 401")
+}
+
+// probeUsage 模擬 header probe:回固定額度,不帶模型名。
+type probeUsage struct{ lastToken string }
+
+func (u *probeUsage) Fetch(_ context.Context, t string) (usage.Snapshot, error) {
+	u.lastToken = t
+	return usage.Snapshot{SevenDay: 50, FiveHour: 24, ScopedPct: 12, ScopedResetsAt: 1791302400}, nil
+}
+
+// TestCycleExpiredTokenFallsBackToProbe:登入過期且換不到新 token 時,不打 usage endpoint,
+// 改用 probe token 讀 header,並沿用先前已知的模型名。
+func TestCycleExpiredTokenFallsBackToProbe(t *testing.T) {
+	credsPath := filepath.Join(t.TempDir(), "creds.json")
+	now := time.Now().Unix()
+	writeCreds(t, credsPath, "AT-OLD", "RT-DEAD", (now-60)*1000) // 已過期
+	s, _ := store.Open(":memory:")
+	defer s.Close()
+	_ = s.InsertReading(store.Reading{AccountID: "main", TS: now - 300, SevenDay: 49, ScopedLabel: "Fable"})
+
+	endpoint := &failingUsage{}
+	probe := &probeUsage{}
+	p := &Poller{
+		Store: s, Usage: endpoint, OAuth: &credsRefresher{err: errors.New("invalid_grant")},
+		Probe: probe, ProbeToken: "LONG", ProbeAccount: "main",
+		Now: func() int64 { return now },
+	}
+	if err := p.cycle(context.Background(), store.Account{ID: "main", CredsPath: credsPath}); err != nil {
+		t.Fatal(err)
+	}
+	if endpoint.calls != 0 {
+		t.Errorf("token 已過期不該再打 usage endpoint,打了 %d 次", endpoint.calls)
+	}
+	if probe.lastToken != "LONG" {
+		t.Errorf("應改用 probe token,得 %q", probe.lastToken)
+	}
+	r, ok, _ := s.LatestReading("main")
+	if !ok || r.TS != now || r.SevenDay != 50 || r.ScopedPct != 12 {
+		t.Fatalf("應寫入 probe 的 reading: %+v", r)
+	}
+	if r.ScopedLabel != "Fable" {
+		t.Errorf("header 不帶模型名,應沿用上一筆的 Fable,得 %q", r.ScopedLabel)
+	}
+}
+
+// TestCycleEndpointOKSkipsProbe:usage endpoint 正常時不發 probe(probe 會吃額度)。
+func TestCycleEndpointOKSkipsProbe(t *testing.T) {
+	credsPath := filepath.Join(t.TempDir(), "creds.json")
+	writeCreds(t, credsPath, "AT", "RT", (time.Now().Unix()+8*3600)*1000)
+	s, _ := store.Open(":memory:")
+	defer s.Close()
+	probe := &probeUsage{}
+	p := &Poller{
+		Store: s, Usage: &tokenCaptureUsage{}, OAuth: &credsRefresher{},
+		Probe: probe, ProbeToken: "LONG", ProbeAccount: "main",
+		Now: func() int64 { return time.Now().Unix() },
+	}
+	if err := p.cycle(context.Background(), store.Account{ID: "main", CredsPath: credsPath}); err != nil {
+		t.Fatal(err)
+	}
+	if probe.lastToken != "" {
+		t.Error("endpoint 正常時不該發 probe")
+	}
+}
+
+// TestCycleProbeOnlyForItsAccount:probe token 屬於特定帳號,其他帳號失敗時不能拿它去讀。
+func TestCycleProbeOnlyForItsAccount(t *testing.T) {
+	credsPath := filepath.Join(t.TempDir(), "creds.json")
+	writeCreds(t, credsPath, "AT", "RT", (time.Now().Unix()+8*3600)*1000)
+	s, _ := store.Open(":memory:")
+	defer s.Close()
+	probe := &probeUsage{}
+	p := &Poller{
+		Store: s, Usage: &failingUsage{}, OAuth: &credsRefresher{},
+		Probe: probe, ProbeToken: "LONG", ProbeAccount: "main",
+		Now: func() int64 { return time.Now().Unix() },
+	}
+	if err := p.cycle(context.Background(), store.Account{ID: "other", CredsPath: credsPath}); err == nil {
+		t.Fatal("其他帳號應回原本的錯誤")
+	}
+	if probe.lastToken != "" {
+		t.Error("不該用 main 的 probe token 讀別的帳號")
+	}
+}
